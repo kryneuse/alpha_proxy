@@ -1,19 +1,23 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"alpha_proxy/internal/auth"
 	"alpha_proxy/internal/config"
 	"alpha_proxy/internal/contract"
 	"alpha_proxy/internal/middleware"
+	"alpha_proxy/internal/observability"
 )
 
 // fakeProcessor records calls and returns a configurable result or error.
@@ -388,12 +392,15 @@ func TestProcessDoesNotLeakSensitiveData(t *testing.T) {
 		payload   = "super-secret-payload"
 		payloadID = "super-secret-id"
 		apiKey    = "test-key-a"
+		query     = "super-secret-query"
 	)
 
+	var buf bytes.Buffer
+	log := observability.NewLoggerTo(&buf)
 	fake := &fakeProcessor{err: errors.New(secretErr)}
-	handler := newTestHandler(fake, 1<<20, apiKeyAuthConfig())
+	handler := newTestHandlerWithLogger(fake, 1<<20, apiKeyAuthConfig(), 0, log)
 
-	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(
+	req := httptest.NewRequest(http.MethodPost, "/process?"+query, strings.NewReader(
 		fmt.Sprintf(`{"payload":%q,"payload_id":%q}`, payload, payloadID)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", apiKey)
@@ -404,14 +411,44 @@ func TestProcessDoesNotLeakSensitiveData(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	body := rec.Body.String()
-	for _, leak := range []string{secretErr, payload, payloadID, apiKey} {
-		if strings.Contains(body, leak) {
-			t.Errorf("response leaked %q: %q", leak, body)
+	if rec.Body.String() != "internal error\n" {
+		t.Errorf("body = %q, want stable message", rec.Body.String())
+	}
+
+	out := buf.String()
+	if !strings.Contains(out, `"route":"POST /process"`) {
+		t.Errorf("log missing route=POST /process: %q", out)
+	}
+	for _, leak := range []string{secretErr, payload, payloadID, apiKey, query} {
+		if strings.Contains(out, leak) {
+			t.Errorf("completion log leaked %q: %q", leak, out)
 		}
 	}
-	if body != "internal error\n" {
-		t.Errorf("body = %q, want stable message", body)
+}
+
+func TestCompletionLogUnknownRoute(t *testing.T) {
+	const secretPath = "/super-secret-unknown-path"
+
+	var buf bytes.Buffer
+	log := observability.NewLoggerTo(&buf)
+	fake := &fakeProcessor{resp: contract.ProcessResponse{Result: "r"}}
+	handler := newTestHandlerWithLogger(fake, 1<<20, verifyAuthConfig(), 0, log)
+
+	req := httptest.NewRequest(http.MethodPost, secretPath, nil)
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	out := buf.String()
+	if strings.Contains(out, secretPath) {
+		t.Errorf("completion log leaked raw path %q: %q", secretPath, out)
+	}
+	if !strings.Contains(out, `"route":"unmatched"`) {
+		t.Errorf("log missing route=unmatched: %q", out)
 	}
 }
 
@@ -430,15 +467,187 @@ func TestProcessSuccessContentType(t *testing.T) {
 	}
 }
 
-// newTestHandler wires the handler through the mux, the auth middleware and the
-// body limit, matching the production chain order.
+func TestProcessTimeoutReturns503(t *testing.T) {
+	// A processor that blocks on ctx.Done() and returns the wrapped deadline
+	// error. No goroutine is used.
+	blocking := &blockingProcessor{}
+	var buf bytes.Buffer
+	log := observability.NewLoggerTo(&buf)
+	handler := newTestHandlerWithLogger(blocking, 1<<20, verifyAuthConfig(), 20*time.Millisecond, log)
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"a","payload_id":"id-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+	if rec.Body.String() != "request timed out\n" {
+		t.Errorf("body = %q, want stable timeout message", rec.Body.String())
+	}
+	out := buf.String()
+	if !strings.Contains(out, `"error_class":"timeout"`) {
+		t.Errorf("completion log missing error_class=timeout: %q", out)
+	}
+	if !strings.Contains(out, `"status":503`) {
+		t.Errorf("completion log missing status=503: %q", out)
+	}
+}
+
+// blockingProcessor waits on ctx.Done() and returns the wrapped context error.
+type blockingProcessor struct{}
+
+func (blockingProcessor) Process(ctx context.Context, _ contract.ProcessRequest) (contract.ProcessResponse, error) {
+	<-ctx.Done()
+	return contract.ProcessResponse{}, fmt.Errorf("wrapped: %w", ctx.Err())
+}
+
+func TestProcessProcessorSeesRequestID(t *testing.T) {
+	fake := &fakeProcessor{resp: contract.ProcessResponse{Result: "r"}}
+	handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"a","payload_id":"id-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "req-123")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	_, ctx := fake.lastCall()
+	if got := middleware.RequestID(ctx); got != "req-123" {
+		t.Errorf("Processor request ID = %q, want req-123", got)
+	}
+	if got := rec.Header().Get("X-Request-ID"); got != "req-123" {
+		t.Errorf("response X-Request-ID = %q, want req-123", got)
+	}
+}
+
+func TestCompletionLogConsumerID(t *testing.T) {
+	tests := []struct {
+		name         string
+		authCfg      config.Config
+		apiKey       string
+		wantStatus   int
+		wantConsumer bool
+		wantErrClass string
+	}{
+		{"authorized verify", verifyAuthConfig(), "", http.StatusOK, true, "none"},
+		{"authorized api key", apiKeyAuthConfig(), "test-key-a", http.StatusOK, true, "none"},
+		{"missing key 401", apiKeyAuthConfig(), "", http.StatusUnauthorized, false, "client_error"},
+		{"invalid key 401", apiKeyAuthConfig(), "wrong-key", http.StatusUnauthorized, false, "client_error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			log := observability.NewLoggerTo(&buf)
+			fake := &fakeProcessor{resp: contract.ProcessResponse{Result: "r"}}
+
+			handler := newTestHandlerWithLogger(fake, 1<<20, tt.authCfg, 0, log)
+
+			req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"a","payload_id":"id-1"}`))
+			req.Header.Set("Content-Type", "application/json")
+			if tt.apiKey != "" {
+				req.Header.Set("X-API-Key", tt.apiKey)
+			}
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantStatus)
+			}
+			out := buf.String()
+			if got := strings.Count(out, `"event":"request_completed"`); got != 1 {
+				t.Errorf("expected exactly one completion record, got %d: %q", got, out)
+			}
+			if !strings.Contains(out, `"route":"POST /process"`) {
+				t.Errorf("log missing route=POST /process: %q", out)
+			}
+			if !strings.Contains(out, `"error_class":"`+tt.wantErrClass+`"`) {
+				t.Errorf("log missing error_class=%s: %q", tt.wantErrClass, out)
+			}
+			hasConsumer := strings.Contains(out, `"consumer_id":`)
+			if tt.wantConsumer && !hasConsumer {
+				t.Errorf("log missing consumer_id: %q", out)
+			}
+			if !tt.wantConsumer && hasConsumer {
+				t.Errorf("log contains consumer_id for %s: %q", tt.name, out)
+			}
+		})
+	}
+}
+
+func TestCompletionLogPanic(t *testing.T) {
+	var buf bytes.Buffer
+	log := observability.NewLoggerTo(&buf)
+
+	panicProc := &panicProcessor{}
+	handler := newTestHandlerWithLogger(panicProc, 1<<20, verifyAuthConfig(), 0, log)
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"a","payload_id":"id-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	out := buf.String()
+	if got := strings.Count(out, `"event":"request_completed"`); got != 1 {
+		t.Errorf("expected exactly one completion record, got %d: %q", got, out)
+	}
+	if !strings.Contains(out, `"status":500`) {
+		t.Errorf("log missing status=500: %q", out)
+	}
+	if !strings.Contains(out, `"error_class":"panic"`) {
+		t.Errorf("log missing error_class=panic: %q", out)
+	}
+}
+
+// panicProcessor panics when invoked.
+type panicProcessor struct{}
+
+func (panicProcessor) Process(context.Context, contract.ProcessRequest) (contract.ProcessResponse, error) {
+	panic("boom")
+}
+
+// newTestHandler wires the handler through the full production chain: request
+// ID, completion logger, recovery, route metadata, auth, processing timeout and
+// body limit.
 func newTestHandler(p contract.Processor, bodyLimit int64, authCfg config.Config) http.Handler {
-	mux := http.NewServeMux()
-	NewHandler(p).Routes(mux)
+	return newTestHandlerWithTimeout(p, bodyLimit, authCfg, 0)
+}
+
+func newTestHandlerWithTimeout(p contract.Processor, bodyLimit int64, authCfg config.Config, timeout time.Duration) http.Handler {
+	return newTestHandlerWithLogger(p, bodyLimit, authCfg, timeout, observability.NewLoggerTo(io.Discard))
+}
+
+func newTestHandlerWithLogger(p contract.Processor, bodyLimit int64, authCfg config.Config, timeout time.Duration, log *observability.Logger) http.Handler {
+	handler := NewHandler(p)
 	authenticator := auth.New(authCfg)
+
+	var process http.Handler = http.HandlerFunc(handler.Process)
+	process = middleware.BodyLimit(bodyLimit, process)
+	if timeout > 0 {
+		process = middleware.ProcessingTimeout(timeout, process)
+	}
+	process = authenticator.Middleware(process)
+	process = middleware.RouteMetadata(ProcessRoute, process)
+
+	mux := http.NewServeMux()
+	mux.Handle(ProcessRoute, process)
+
 	var h http.Handler = mux
-	h = authenticator.Middleware(h)
-	h = middleware.BodyLimit(bodyLimit, h)
+	h = middleware.RequestIDMiddleware(h)
+	h = middleware.Recover(h)
+	h = middleware.CompletionLogger(log, h)
 	return h
 }
 

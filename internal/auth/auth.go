@@ -15,6 +15,7 @@ import (
 	"net/http"
 
 	"alpha_proxy/internal/config"
+	"alpha_proxy/internal/requestmeta"
 )
 
 type ctxKey struct{}
@@ -53,6 +54,7 @@ func ConsumerID(ctx context.Context) string {
 }
 
 // Middleware authenticates the caller and stores the ConsumerID in the context.
+// On success it also records the consumer in the request-scoped logging metadata.
 func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		consumer, status := a.authenticate(r)
@@ -61,6 +63,9 @@ func (a *Authenticator) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(r.Context(), ctxKey{}, consumer)
+		if meta := requestmeta.From(r.Context()); meta != nil {
+			meta.ConsumerID = consumer
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

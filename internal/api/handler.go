@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,7 +14,11 @@ import (
 
 	"alpha_proxy/internal/auth"
 	"alpha_proxy/internal/contract"
+	"alpha_proxy/internal/requestmeta"
 )
+
+// ProcessRoute is the registered route pattern for the process endpoint.
+const ProcessRoute = "POST /process"
 
 // Handler serves the process endpoint.
 type Handler struct {
@@ -54,16 +59,28 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 		ConsumerID: auth.ConsumerID(r.Context()),
 	})
 	if err != nil {
-		if errors.Is(err, contract.ErrUnavailable) {
+		switch {
+		case errors.Is(err, contract.ErrUnavailable):
+			setErrorClass(r, "processor_unavailable")
 			http.Error(w, "processor unavailable", http.StatusServiceUnavailable)
-			return
+		case errors.Is(err, context.DeadlineExceeded):
+			setErrorClass(r, "timeout")
+			http.Error(w, "request timed out", http.StatusServiceUnavailable)
+		default:
+			http.Error(w, "internal error", http.StatusInternalServerError)
 		}
-		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(processResponse{Result: resp.Result})
+}
+
+// setErrorClass records a safe error classification in the logging metadata.
+func setErrorClass(r *http.Request, class string) {
+	if meta := requestmeta.From(r.Context()); meta != nil {
+		meta.ErrorClass = class
+	}
 }
 
 // isJSONContentType reports whether the Content-Type is application/json,
@@ -123,5 +140,5 @@ func isTooLarge(err error) bool {
 
 // Routes registers the contour endpoints on mux.
 func (h *Handler) Routes(mux *http.ServeMux) {
-	mux.HandleFunc("POST /process", h.Process)
+	mux.Handle(ProcessRoute, http.HandlerFunc(h.Process))
 }

@@ -15,19 +15,24 @@ import (
 )
 
 // New builds the fully-wired http.Handler for the contour.
+//
+// Execution order: CompletionLogger → Recover → RequestID → ServeMux → Route
+// metadata → Auth → ProcessingTimeout → BodyLimit → handler.
 func New(cfg config.Config, log *observability.Logger, p contract.Processor) http.Handler {
 	handler := api.NewHandler(p)
-
-	mux := http.NewServeMux()
-	handler.Routes(mux)
-
 	authenticator := auth.New(cfg)
 
+	processHandler := middleware.RouteMetadata(api.ProcessRoute,
+		authenticator.Middleware(
+			middleware.ProcessingTimeout(cfg.ProcessingTimeout,
+				middleware.BodyLimit(cfg.BodyLimit, http.HandlerFunc(handler.Process)))))
+
+	mux := http.NewServeMux()
+	mux.Handle(api.ProcessRoute, processHandler)
+
 	var h http.Handler = mux
-	h = middleware.BodyLimit(cfg.BodyLimit, h)
-	h = middleware.ProcessingTimeout(cfg.ProcessingTimeout, h)
-	h = authenticator.Middleware(h)
-	h = middleware.Logging(log, h)
-	h = middleware.Recover(log, h)
+	h = middleware.RequestIDMiddleware(h)
+	h = middleware.Recover(h)
+	h = middleware.CompletionLogger(log, h)
 	return h
 }
