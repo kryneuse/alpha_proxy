@@ -228,8 +228,7 @@ func (s *Scorer) context(norm *normalize.Text, start, end int) string {
 	if hi > norm.Len() {
 		hi = norm.Len()
 	}
-	runes := []rune(norm.Normalized)
-	return string(runes[lo:hi])
+	return norm.Normalized[norm.RuneToByte(lo):norm.RuneToByte(hi)]
 }
 
 // preceding returns up to n runes of normalized text immediately before the
@@ -240,8 +239,7 @@ func (s *Scorer) preceding(norm *normalize.Text, start, n int) string {
 	if lo < 0 {
 		lo = 0
 	}
-	runes := []rune(norm.Normalized)
-	return string(runes[lo:ns])
+	return norm.Normalized[norm.RuneToByte(lo):norm.RuneToByte(ns)]
 }
 
 // containsAny reports whether any keyword is a substring of s.

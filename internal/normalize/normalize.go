@@ -22,6 +22,9 @@ type Text struct {
 	// origEnds[i] is the byte offset just after the rune at normalized
 	// position i.
 	origEnds []int
+	// normByteOffsets[i] is the byte offset in Normalized of the rune at
+	// normalized position i. Used for O(log n) byte->rune mapping.
+	normByteOffsets []int
 }
 
 // New builds a normalized Text from the original string.
@@ -39,40 +42,41 @@ func New(original string) *Text {
 	var norm strings.Builder
 	offsets := make([]int, 0, len(origRunes))
 	ends := make([]int, 0, len(origRunes))
+	normOffsets := make([]int, 0, len(origRunes))
 
 	byteOff := 0
+	normByteOff := 0
 	prevSpace := false
 	for _, r := range origRunes {
 		rlen := len(string(r))
+		var written rune
 		switch {
 		case isDash(r):
-			norm.WriteRune('-')
-			offsets = append(offsets, byteOff)
-			ends = append(ends, byteOff+rlen)
-			byteOff += rlen
-			prevSpace = false
+			written = '-'
 		case unicode.IsSpace(r):
-			if !prevSpace {
-				norm.WriteRune(' ')
-				offsets = append(offsets, byteOff)
-				ends = append(ends, byteOff+rlen)
+			if prevSpace {
+				byteOff += rlen
+				continue
 			}
-			byteOff += rlen
-			prevSpace = true
+			written = ' '
 		default:
-			norm.WriteRune(unicode.ToLower(r))
-			offsets = append(offsets, byteOff)
-			ends = append(ends, byteOff+rlen)
-			byteOff += rlen
-			prevSpace = false
+			written = unicode.ToLower(r)
 		}
+		norm.WriteRune(written)
+		offsets = append(offsets, byteOff)
+		ends = append(ends, byteOff+rlen)
+		normOffsets = append(normOffsets, normByteOff)
+		byteOff += rlen
+		normByteOff += len(string(written))
+		prevSpace = unicode.IsSpace(r)
 	}
 
 	return &Text{
-		Original:    original,
-		Normalized:  norm.String(),
-		origOffsets: offsets,
-		origEnds:    ends,
+		Original:        original,
+		Normalized:      norm.String(),
+		origOffsets:     offsets,
+		origEnds:        ends,
+		normByteOffsets: normOffsets,
 	}
 }
 
@@ -121,8 +125,34 @@ func (t *Text) Len() int {
 }
 
 // ByteToRune converts a byte offset in the normalized string to a rune index.
+// It uses a precomputed index for O(log n) lookup instead of rescanning the
+// string from the start.
 func (t *Text) ByteToRune(byteOff int) int {
-	return len([]rune(t.Normalized[:byteOff]))
+	if len(t.normByteOffsets) == 0 {
+		return 0
+	}
+	lo, hi := 0, len(t.normByteOffsets)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if t.normByteOffsets[mid] < byteOff {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	return lo
+}
+
+// RuneToByte converts a rune index in the normalized string to a byte offset.
+// It is O(1) via the precomputed index.
+func (t *Text) RuneToByte(runeIdx int) int {
+	if runeIdx < 0 {
+		return 0
+	}
+	if runeIdx >= len(t.normByteOffsets) {
+		return len(t.Normalized)
+	}
+	return t.normByteOffsets[runeIdx]
 }
 
 // OriginalToNorm maps an original byte offset to the nearest normalized rune

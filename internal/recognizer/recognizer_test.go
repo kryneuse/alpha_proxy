@@ -138,6 +138,26 @@ func TestBirthPlaceRecognizer(t *testing.T) {
 	if len(spans) != 1 {
 		t.Fatalf("expected 1 birth place, got %d", len(spans))
 	}
+	// The leading preposition "в" must not be part of the span.
+	cases := []struct {
+		text string
+		want string
+	}{
+		{"Родился в городе Санкт-Петербург", "городе Санкт-Петербург"},
+		{"Родилась в Новосибирске", "Новосибирске"},
+		{"Родился в Самаре", "Самаре"},
+		{"Родился в 1990 году в Москве", "Москве"},
+	}
+	for _, c := range cases {
+		spans := findSpans(t, rec, c.text)
+		if len(spans) != 1 {
+			t.Errorf("expected 1 birth place for %q, got %d", c.text, len(spans))
+			continue
+		}
+		if spans[0].Text != c.want {
+			t.Errorf("expected birth place %q for %q, got %q", c.want, c.text, spans[0].Text)
+		}
+	}
 }
 
 func TestFullNameRecognizer(t *testing.T) {

@@ -111,6 +111,27 @@ func stripPunct(s string) string {
 	return strings.Trim(s, ".,;:!?()[]{}«»\"'")
 }
 
+// stripLeadingPreposition removes a leading preposition "в " (and "в") from a
+// place phrase so the preposition is not part of the entity span. It returns
+// the stripped phrase and the adjusted byte start offset.
+func stripLeadingPreposition(s string, startByte int) (string, int) {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	if strings.HasPrefix(lower, "в ") {
+		rest := strings.TrimSpace(s[2:])
+		// Find where the trimmed rest begins within the original phrase.
+		idx := strings.Index(s, rest)
+		if idx < 0 {
+			return rest, startByte + 2
+		}
+		return rest, startByte + idx
+	}
+	if lower == "в" {
+		return "", startByte
+	}
+	return s, startByte
+}
+
 // BirthPlaceRecognizer detects birth places using context constructions.
 type BirthPlaceRecognizer struct {
 	re *regexp.Regexp
@@ -144,7 +165,9 @@ func (r *BirthPlaceRecognizer) Recognize(norm *normalize.Text) []entity.Candidat
 		place = trimFieldSeparator(place)
 		// A bare preposition is not a place.
 		place = strings.TrimSpace(place)
-		if place == "" || place == "в" || place == "в " {
+		// Strip a leading preposition "в " so it is not part of the span.
+		place, startByte = stripLeadingPreposition(place, startByte)
+		if place == "" {
 			continue
 		}
 		// Recompute end after trimming.

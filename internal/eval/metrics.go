@@ -10,11 +10,15 @@ import (
 
 // Metrics holds computed evaluation metrics.
 type Metrics struct {
-	// Span metrics (IoU >= 0.5 matching).
-	SpanPrecision float64
-	SpanRecall    float64
-	SpanF1        float64
-	// Exact-span metrics (IoU == 1.0).
+	// SpanDetection metrics (IoU >= 0.5, type NOT required to match).
+	SpanDetectionPrecision float64
+	SpanDetectionRecall    float64
+	SpanDetectionF1        float64
+	// TypedSpan metrics (IoU >= 0.5, type must match).
+	TypedSpanPrecision float64
+	TypedSpanRecall    float64
+	TypedSpanF1        float64
+	// Exact-span metrics (IoU == 1.0, type must match).
 	ExactPrecision float64
 	ExactRecall    float64
 	ExactF1        float64
@@ -45,8 +49,9 @@ const IoUThreshold = 0.5
 
 // Evaluate runs the engine over the dataset and computes metrics.
 func Evaluate(e *engine.Engine, samples []Sample) Metrics {
+	var detTP, detFP, detFN int
 	var spanTP, spanFP, spanFN int
-	var exactTP int
+	var exactTP, exactFP, exactFN int
 	typed := make(map[entity.Type]*TypeMetrics)
 	for _, t := range entity.AllTypes() {
 		typed[t] = &TypeMetrics{}
@@ -77,38 +82,75 @@ func Evaluate(e *engine.Engine, samples []Sample) Metrics {
 			if len(got) > 0 {
 				negFP++
 			}
+			// Every prediction on a negative sample is a false positive.
+			for _, g := range got {
+				detFP++
+				spanFP++
+				exactFP++
+				typed[g.Type].FP++
+			}
 			continue
 		}
 
-		// One-to-one matching of predicted to expected spans.
-		matched := matchSpans(s.Expected, got)
+		// Span detection matching (IoU >= threshold, type NOT required).
+		detMatch := matchSpans(s.Expected, got, IoUThreshold, false)
+		// Typed span matching (IoU >= threshold, type required).
+		spanMatch := matchSpans(s.Expected, got, IoUThreshold, true)
+		// Exact matching (IoU == 1.0, type required).
+		exactMatch := matchSpans(s.Expected, got, 1.0, true)
 
-		// Count span-level TP/FP/FN.
-		for _, m := range matched {
+		// Span detection TP/FP/FN.
+		for _, m := range detMatch.results {
+			if m.matched {
+				detTP++
+			} else {
+				detFN++
+			}
+		}
+		for i := range got {
+			if !detMatch.used[i] {
+				detFP++
+			}
+		}
+
+		// Typed span TP/FP/FN.
+		for _, m := range spanMatch.results {
 			if m.matched {
 				spanTP++
 				typed[m.expected.Type].TP++
-				if m.exact {
-					exactTP++
-				}
 			} else {
 				spanFN++
 				typed[m.expected.Type].FN++
 			}
 		}
-		// Count unmatched predicted spans as FP.
-		for _, g := range got {
-			if !matchedPredicted(matched, g) {
+		for i, g := range got {
+			if !spanMatch.used[i] {
 				spanFP++
 				typed[g.Type].FP++
 			}
 		}
+
+		// Exact-level TP/FP/FN.
+		for _, m := range exactMatch.results {
+			if m.matched {
+				exactTP++
+			} else {
+				exactFN++
+			}
+		}
+		for i := range got {
+			if !exactMatch.used[i] {
+				exactFP++
+			}
+		}
 	}
 
+	detPrecision := ratio(detTP, detTP+detFP)
+	detRecall := ratio(detTP, detTP+detFN)
 	spanPrecision := ratio(spanTP, spanTP+spanFP)
 	spanRecall := ratio(spanTP, spanTP+spanFN)
-	exactPrecision := ratio(exactTP, exactTP+spanFP)
-	exactRecall := ratio(exactTP, exactTP+spanFN)
+	exactPrecision := ratio(exactTP, exactTP+exactFP)
+	exactRecall := ratio(exactTP, exactTP+exactFN)
 
 	typedMetrics := make(map[entity.Type]TypeMetrics)
 	for t, m := range typed {
@@ -130,16 +172,19 @@ func Evaluate(e *engine.Engine, samples []Sample) Metrics {
 	}
 
 	return Metrics{
-		SpanPrecision:     spanPrecision,
-		SpanRecall:        spanRecall,
-		SpanF1:            f1Score(spanPrecision, spanRecall),
-		ExactPrecision:    exactPrecision,
-		ExactRecall:       exactRecall,
-		ExactF1:           f1Score(exactPrecision, exactRecall),
-		Typed:             typedMetrics,
-		FalsePositiveRate: fpr,
-		Latency:           totalLatency / time.Duration(len(samples)),
-		OffsetErrors:      offsetErrors,
+		SpanDetectionPrecision: detPrecision,
+		SpanDetectionRecall:    detRecall,
+		SpanDetectionF1:        f1Score(detPrecision, detRecall),
+		TypedSpanPrecision:     spanPrecision,
+		TypedSpanRecall:        spanRecall,
+		TypedSpanF1:            f1Score(spanPrecision, spanRecall),
+		ExactPrecision:         exactPrecision,
+		ExactRecall:            exactRecall,
+		ExactF1:                f1Score(exactPrecision, exactRecall),
+		Typed:                  typedMetrics,
+		FalsePositiveRate:      fpr,
+		Latency:                totalLatency / time.Duration(len(samples)),
+		OffsetErrors:           offsetErrors,
 	}
 }
 
@@ -147,19 +192,31 @@ func Evaluate(e *engine.Engine, samples []Sample) Metrics {
 type matchResult struct {
 	expected Expected
 	matched  bool
-	exact    bool
+}
+
+// matchSet is the result of matching expected to predicted spans.
+type matchSet struct {
+	results []matchResult
+	// used[i] is true if predicted span i was consumed by a match.
+	used []bool
 }
 
 // matchSpans performs greedy one-to-one matching of expected to predicted
-// spans by IoU. Each predicted span can match at most one expected span.
-func matchSpans(expected []Expected, got []entity.Entity) []matchResult {
+// spans by IoU. Each predicted span can match at most one expected span, and
+// each expected span at most one predicted span. A match requires IoU >=
+// threshold. If requireType is true, the predicted type must equal the
+// expected type. The used slice records which predicted indices were consumed.
+func matchSpans(expected []Expected, got []entity.Entity, threshold float64, requireType bool) matchSet {
 	results := make([]matchResult, len(expected))
 	used := make([]bool, len(got))
 	for i, exp := range expected {
 		bestIdx := -1
 		bestIoU := 0.0
 		for j, g := range got {
-			if used[j] || g.Type != exp.Type {
+			if used[j] {
+				continue
+			}
+			if requireType && g.Type != exp.Type {
 				continue
 			}
 			iou := spanIoU(exp.Start, exp.End, g.Start, g.End)
@@ -168,25 +225,14 @@ func matchSpans(expected []Expected, got []entity.Entity) []matchResult {
 				bestIdx = j
 			}
 		}
-		if bestIdx >= 0 && bestIoU >= IoUThreshold {
+		if bestIdx >= 0 && bestIoU >= threshold {
 			used[bestIdx] = true
-			results[i] = matchResult{expected: exp, matched: true, exact: bestIoU >= 0.999}
+			results[i] = matchResult{expected: exp, matched: true}
 		} else {
 			results[i] = matchResult{expected: exp}
 		}
 	}
-	return results
-}
-
-// matchedPredicted reports whether a predicted span was used in a match.
-func matchedPredicted(results []matchResult, g entity.Entity) bool {
-	for _, r := range results {
-		if r.matched && r.expected.Type == g.Type &&
-			spanIoU(r.expected.Start, r.expected.End, g.Start, g.End) >= IoUThreshold {
-			return true
-		}
-	}
-	return false
+	return matchSet{results: results, used: used}
 }
 
 // spanIoU computes the intersection-over-union of two spans.
@@ -232,11 +278,15 @@ func min(a, b int) int {
 // Print writes a human-readable report.
 func (m Metrics) Print() {
 	fmt.Printf("=== Rule Engine Evaluation ===\n")
-	fmt.Printf("Span metrics (IoU>=%.1f):\n", IoUThreshold)
-	fmt.Printf("  Precision: %.3f\n", m.SpanPrecision)
-	fmt.Printf("  Recall:    %.3f\n", m.SpanRecall)
-	fmt.Printf("  F1:        %.3f\n", m.SpanF1)
-	fmt.Printf("Exact-span metrics (IoU==1.0):\n")
+	fmt.Printf("Span detection (IoU>=%.1f, type NOT required):\n", IoUThreshold)
+	fmt.Printf("  Precision: %.3f\n", m.SpanDetectionPrecision)
+	fmt.Printf("  Recall:    %.3f\n", m.SpanDetectionRecall)
+	fmt.Printf("  F1:        %.3f\n", m.SpanDetectionF1)
+	fmt.Printf("Typed span (IoU>=%.1f, type required):\n", IoUThreshold)
+	fmt.Printf("  Precision: %.3f\n", m.TypedSpanPrecision)
+	fmt.Printf("  Recall:    %.3f\n", m.TypedSpanRecall)
+	fmt.Printf("  F1:        %.3f\n", m.TypedSpanF1)
+	fmt.Printf("Exact-span (IoU==1.0, type required):\n")
 	fmt.Printf("  Precision: %.3f\n", m.ExactPrecision)
 	fmt.Printf("  Recall:    %.3f\n", m.ExactRecall)
 	fmt.Printf("  F1:        %.3f\n", m.ExactF1)

@@ -42,11 +42,19 @@ func (r *Resolver) Resolve(spans []entity.CandidateSpan) []entity.Entity {
 		return filtered[i].Score > filtered[j].Score
 	})
 
-	// 3. Resolve overlaps greedily.
+	// 3. Resolve overlaps greedily. Candidates are sorted by start, so a resolved
+	// span whose End <= current Start can never overlap again; we keep a pointer
+	// to the first still-active resolved span to avoid an O(n^2) scan.
 	var resolved []entity.CandidateSpan
+	activeStart := 0
 	for _, s := range filtered {
+		// Advance activeStart past resolved spans that can no longer overlap.
+		for activeStart < len(resolved) && resolved[activeStart].End <= s.Start {
+			activeStart++
+		}
 		overlap := false
-		for i, keep := range resolved {
+		for i := activeStart; i < len(resolved); i++ {
+			keep := resolved[i]
 			if spansOverlap(s, keep) {
 				// Prefer the candidate with stronger evidence; tie-break by
 				// score. This keeps a checksum+context candidate over a bare

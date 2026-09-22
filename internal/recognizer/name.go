@@ -99,26 +99,28 @@ type token struct {
 	end   int
 }
 
-// tokenize splits the normalized text into words with byte offsets.
+// tokenize splits the normalized text into words with byte offsets. It is a
+// single linear pass over the string using range, so it is O(n) even for
+// multi-byte UTF-8 (Cyrillic) input.
 func tokenize(s string) []token {
 	var out []token
-	runes := []rune(s)
-	i := 0
-	for i < len(runes) {
-		// Skip non-letters.
-		for i < len(runes) && !isLetter(runes[i]) {
-			i++
+	inWord := false
+	start := 0
+	for i, r := range s {
+		if isLetter(r) {
+			if !inWord {
+				start = i
+				inWord = true
+			}
+		} else {
+			if inWord {
+				out = append(out, token{text: s[start:i], start: start, end: i})
+				inWord = false
+			}
 		}
-		if i >= len(runes) {
-			break
-		}
-		startRune := i
-		for i < len(runes) && isLetter(runes[i]) {
-			i++
-		}
-		startByte := len(string(runes[:startRune]))
-		endByte := len(string(runes[:i]))
-		out = append(out, token{text: s[startByte:endByte], start: startByte, end: endByte})
+	}
+	if inWord {
+		out = append(out, token{text: s[start:], start: start, end: len(s)})
 	}
 	return out
 }

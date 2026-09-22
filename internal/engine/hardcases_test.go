@@ -172,11 +172,11 @@ func TestBirthPlaceWithYear(t *testing.T) {
 	got := e.Analyze(text)
 	hasPlace := false
 	for _, g := range got {
-		if g.Type == entity.BIRTH_PLACE && g.Text == "в Москве" {
+		if g.Type == entity.BIRTH_PLACE && g.Text == "Москве" {
 			hasPlace = true
 		}
 	}
 	if !hasPlace {
-		t.Errorf("expected BIRTH_PLACE 'в Москве', got %+v", got)
+		t.Errorf("expected BIRTH_PLACE 'Москве', got %+v", got)
 	}
 }

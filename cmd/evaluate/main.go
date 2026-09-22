@@ -16,9 +16,9 @@ func main() {
 	metrics := eval.Evaluate(e, eval.Dataset())
 	metrics.Print()
 
-	// Exit non-zero if span recall is below a reasonable bar.
-	if metrics.SpanRecall < 0.5 {
-		fmt.Fprintln(os.Stderr, "WARNING: span recall below 0.5")
+	// Exit non-zero if typed span recall is below a reasonable bar.
+	if metrics.TypedSpanRecall < 0.5 {
+		fmt.Fprintln(os.Stderr, "WARNING: typed span recall below 0.5")
 		os.Exit(1)
 	}
 }
