@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // EmailRecognizer detects email addresses.
@@ -33,7 +33,7 @@ func (r *EmailRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSpan
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.9,
+			Score:   0.6,
 			Sources: []entity.Source{entity.SourceRegex},
 			Reason:  "regex:email",
 		})
@@ -66,7 +66,7 @@ func (r *PhoneRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSpan
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.85,
+			Score:   0.6,
 			Sources: []entity.Source{entity.SourceRegex},
 			Reason:  "regex:phone",
 		})

@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // CardNumberRecognizer detects bank card numbers using format + Luhn.
@@ -38,7 +38,7 @@ func (r *CardNumberRecognizer) Recognize(norm *normalize.Text) []entity.Candidat
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.8,
+			Score:   0.4,
 			Sources: []entity.Source{entity.SourceRegex, entity.SourceChecksum},
 			Reason:  "card-luhn",
 		})
@@ -143,7 +143,7 @@ func (r *CardholderRecognizer) Recognize(norm *normalize.Text) []entity.Candidat
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.5,
+			Score:   0.3,
 			Sources: []entity.Source{entity.SourceRegex},
 			Reason:  "regex:cardholder",
 		})

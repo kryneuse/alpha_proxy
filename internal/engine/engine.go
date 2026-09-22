@@ -3,11 +3,11 @@
 package engine
 
 import (
-	"github.com/alpha-proxy/rule-engine/internal/context"
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
-	"github.com/alpha-proxy/rule-engine/internal/recognizer"
-	"github.com/alpha-proxy/rule-engine/internal/resolver"
+	"github.com/kryneuse/alpha_proxy/internal/context"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/recognizer"
+	"github.com/kryneuse/alpha_proxy/internal/resolver"
 )
 
 // Engine is the top-level rule engine.
@@ -78,7 +78,56 @@ func (e *Engine) Analyze(text string) []entity.Entity {
 		scored = append(scored, adjusted)
 	}
 
+	// Second pass: a nearby CARD_NUMBER is a strong signal for CVV/PIN.
+	scored = boostNearCard(scored)
+
 	return e.resolver.Resolve(scored)
+}
+
+// boostNearCard raises the score of CVV/PIN candidates that are close to a
+// detected CARD_NUMBER. A real card number nearby is strong evidence that a
+// 3/4-digit number is a CVV/PIN.
+func boostNearCard(spans []entity.CandidateSpan) []entity.CandidateSpan {
+	// Collect card number spans.
+	var cards []entity.CandidateSpan
+	for _, s := range spans {
+		if s.Type == entity.CARD_NUMBER && s.Score >= 0.5 {
+			cards = append(cards, s)
+		}
+	}
+	if len(cards) == 0 {
+		return spans
+	}
+	out := make([]entity.CandidateSpan, len(spans))
+	copy(out, spans)
+	for i, s := range out {
+		if s.Type != entity.CVV && s.Type != entity.PIN {
+			continue
+		}
+		for _, c := range cards {
+			if spansClose(s, c, 60) {
+				// Strong boost: a card number nearby.
+				out[i].Score += 0.4
+				if out[i].Score > 1 {
+					out[i].Score = 1
+				}
+				out[i].Sources = append(out[i].Sources, entity.SourceContext)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// spansClose reports whether two spans are within maxGap runes of each other.
+func spansClose(a, b entity.CandidateSpan, maxGap int) bool {
+	if a.End < b.Start {
+		return b.Start-a.End <= maxGap
+	}
+	if b.End < a.Start {
+		return a.Start-b.End <= maxGap
+	}
+	return true
 }
 
 // Registry returns the underlying recognizer registry.

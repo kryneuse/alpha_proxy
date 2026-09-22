@@ -4,9 +4,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/dict"
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/dict"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // CitizenshipRecognizer detects citizenship using a country dictionary.
@@ -25,10 +25,15 @@ func NewCitizenshipRecognizer(countries *dict.Dict) *CitizenshipRecognizer {
 // Type returns the entity type.
 func (r *CitizenshipRecognizer) Type() entity.Type { return entity.CITIZENSHIP }
 
-// Recognize finds citizenship candidates.
+// Recognize finds citizenship candidates. A country name is only a strong
+// candidate when citizenship context is present; the context scorer boosts it
+// above the threshold. The base score is kept below the threshold so a bare
+// country mention (e.g. "Россия — крупнейшая страна") is not emitted.
 func (r *CitizenshipRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSpan {
 	var spans []entity.CandidateSpan
 	words := strings.Fields(norm.Normalized)
+	// Compute the byte offset of each token by scanning the normalized text.
+	offsets := tokenOffsets(norm.Normalized, words)
 	for i := 0; i < len(words); i++ {
 		// Try multi-word country names (up to 3 words).
 		for n := 3; n >= 1; n-- {
@@ -36,25 +41,74 @@ func (r *CitizenshipRecognizer) Recognize(norm *normalize.Text) []entity.Candida
 				continue
 			}
 			phrase := strings.Join(words[i:i+n], " ")
-			if r.countries.Contains(phrase) {
-				start := indexOf(norm.Normalized, words[i])
-				end := start + len(phrase)
-				oStart, oEnd := norm.MapSpan(norm.ByteToRune(start), norm.ByteToRune(end))
-				spans = append(spans, entity.CandidateSpan{
-					Type:    entity.CITIZENSHIP,
-					Text:    norm.Original[oStart:oEnd],
-					Start:   oStart,
-					End:     oEnd,
-					Score:   0.6,
-					Sources: []entity.Source{entity.SourceDictionary},
-					Reason:  "dict:country",
-				})
-				i += n - 1
-				break
+			clean := stripPunct(phrase)
+			if !r.matchCountry(clean) {
+				continue
 			}
+			start := offsets[i]
+			// Trim trailing punctuation from the emitted span.
+			end := start + len(clean)
+			oStart, oEnd := norm.MapSpan(norm.ByteToRune(start), norm.ByteToRune(end))
+			spans = append(spans, entity.CandidateSpan{
+				Type:    entity.CITIZENSHIP,
+				Text:    norm.Original[oStart:oEnd],
+				Start:   oStart,
+				End:     oEnd,
+				Score:   0.3,
+				Sources: []entity.Source{entity.SourceDictionary},
+				Reason:  "dict:country",
+			})
+			i += n - 1
+			break
 		}
 	}
 	return spans
+}
+
+// tokenOffsets returns the byte offset of each word in the normalized string.
+func tokenOffsets(s string, words []string) []int {
+	offsets := make([]int, len(words))
+	pos := 0
+	for i, w := range words {
+		idx := strings.Index(s[pos:], w)
+		if idx < 0 {
+			offsets[i] = pos
+			continue
+		}
+		offsets[i] = pos + idx
+		pos = offsets[i] + len(w)
+	}
+	return offsets
+}
+
+// matchCountry reports whether the phrase matches a country name, tolerating
+// common Russian case endings (e.g. "Казахстана" -> "Казахстан").
+func (r *CitizenshipRecognizer) matchCountry(phrase string) bool {
+	if r.countries.Contains(phrase) {
+		return true
+	}
+	// Try stripping a trailing case ending from the last word.
+	words := strings.Fields(phrase)
+	if len(words) == 0 {
+		return false
+	}
+	last := words[len(words)-1]
+	for _, suffix := range []string{"ов", "ев", "ин", "ын", "а", "я", "е", "у", "ой", "ий", "ый"} {
+		if len(last) > len(suffix)+2 && strings.HasSuffix(last, suffix) {
+			stem := last[:len(last)-len(suffix)]
+			// Rebuild the phrase with the stemmed last word.
+			words[len(words)-1] = stem
+			if r.countries.Contains(strings.Join(words, " ")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stripPunct removes trailing punctuation from a phrase for dictionary lookup.
+func stripPunct(s string) string {
+	return strings.Trim(s, ".,;:!?()[]{}«»\"'")
 }
 
 // BirthPlaceRecognizer detects birth places using context constructions.
@@ -65,18 +119,37 @@ type BirthPlaceRecognizer struct {
 // NewBirthPlaceRecognizer builds a birth place recognizer.
 func NewBirthPlaceRecognizer() *BirthPlaceRecognizer {
 	return &BirthPlaceRecognizer{
-		re: regexp.MustCompile(`(?:место рождения|родился|родилась|уроженец|уроженка|родом из)[:\s]+([а-яёa-z\s.,\-]{2,60})`),
+		// Capture the place after the birth keyword, optionally skipping a
+		// "в YYYY году" year phrase. The place is a sequence of letters,
+		// spaces, dots and hyphens.
+		re: regexp.MustCompile(`(?:место рождения|родился|родилась|уроженец|уроженка|родом из)[:\s]+(?:в\s+\d{4}\s+году\s+)?([а-яёa-z\s.,\-]{2,60})`),
 	}
 }
 
 // Type returns the entity type.
 func (r *BirthPlaceRecognizer) Type() entity.Type { return entity.BIRTH_PLACE }
 
-// Recognize finds birth place candidates.
+// Recognize finds birth place candidates. The emitted span covers only the
+// place, trimmed at a comma followed by a field keyword.
 func (r *BirthPlaceRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSpan {
 	var spans []entity.CandidateSpan
 	for _, loc := range r.re.FindAllStringIndex(norm.Normalized, -1) {
-		oStart, oEnd := norm.MapSpan(norm.ByteToRune(loc[0]), norm.ByteToRune(loc[1]))
+		sub := r.re.FindStringSubmatchIndex(norm.Normalized[loc[0]:loc[1]])
+		if len(sub) < 4 || sub[2] < 0 || sub[3] < 0 {
+			continue
+		}
+		startByte := loc[0] + sub[2]
+		endByte := loc[0] + sub[3]
+		place := norm.Normalized[startByte:endByte]
+		place = trimFieldSeparator(place)
+		// A bare preposition is not a place.
+		place = strings.TrimSpace(place)
+		if place == "" || place == "в" || place == "в " {
+			continue
+		}
+		// Recompute end after trimming.
+		trimmedEnd := startByte + len(place)
+		oStart, oEnd := norm.MapSpan(norm.ByteToRune(startByte), norm.ByteToRune(trimmedEnd))
 		spans = append(spans, entity.CandidateSpan{
 			Type:    entity.BIRTH_PLACE,
 			Text:    norm.Original[oStart:oEnd],
@@ -90,7 +163,16 @@ func (r *BirthPlaceRecognizer) Recognize(norm *normalize.Text) []entity.Candidat
 	return spans
 }
 
-// indexOf returns the byte index of the first occurrence of word in s.
-func indexOf(s, word string) int {
-	return strings.Index(s, word)
+// trimFieldSeparator trims a place/address-like string at a comma followed by
+// a field keyword (e.g. ", дата рождения", ", паспорт").
+func trimFieldSeparator(s string) string {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	for _, sep := range []string{", дата рождения", ", дата", ", паспорт", ", гражданство", ", граждан", ", тел", ", телефон", ", email", ", e-mail", ", инн", ", фио", ", ф.и.о", ", код", ", адрес", ", номер карты", ", cvv", ", пин"} {
+		if i := strings.Index(lower, sep); i >= 0 {
+			s = s[:i]
+			break
+		}
+	}
+	return strings.TrimSpace(s)
 }

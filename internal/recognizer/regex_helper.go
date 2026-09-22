@@ -3,8 +3,8 @@ package recognizer
 import (
 	"regexp"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // regexRecognizer is a base helper for regex-driven recognizers. It runs a

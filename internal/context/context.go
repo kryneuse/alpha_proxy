@@ -6,9 +6,9 @@ package context
 import (
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/dict"
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/dict"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // Window is the number of runes of context examined around a span.
@@ -64,7 +64,7 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 			contextual = true
 		}
 	case entity.CITIZENSHIP:
-		if containsAny(lower, dict.CitizenshipKeywords) {
+		if containsAny(s.preceding(norm, span.Start, 60), dict.CitizenshipKeywords) {
 			boost = s.keywordBoost
 			contextual = true
 		}
@@ -74,7 +74,8 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 			contextual = true
 		}
 	case entity.DEPARTMENT_CODE:
-		if containsAny(lower, dict.DepartmentCodeKeywords) {
+		pre := s.preceding(norm, span.Start, 60)
+		if strings.Contains(pre, "код подразделения") || containsAny(pre, dict.DepartmentCodeKeywords) {
 			boost = s.keywordBoost
 			contextual = true
 		}
@@ -130,12 +131,12 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 			span.Type = entity.DRIVER_LICENSE
 			boost = s.keywordBoost
 			contextual = true
-		} else if containsAny(lower, dict.PassportContextKeywords) {
+		} else if containsAny(s.preceding(norm, span.Start, 60), dict.PassportContextKeywords) {
 			boost = s.keywordBoost
 			contextual = true
 		}
 	case entity.DRIVER_LICENSE:
-		if containsAny(lower, dict.DriverLicenseKeywords) {
+		if containsAny(s.preceding(norm, span.Start, 60), dict.DriverLicenseKeywords) {
 			boost = s.keywordBoost
 			contextual = true
 		}
@@ -144,19 +145,61 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 	// Negative context suppression.
 	switch span.Type {
 	case entity.CVV:
-		if containsAny(lower, dict.AuditoriumKeywords) {
+		if containsAny(lower, dict.AuditoriumKeywords) || containsAny(lower, dict.NonBankCvvKeywords) {
 			boost -= s.keywordSuppress
 		}
 	case entity.PIN:
-		if containsAny(lower, dict.OrderNumberKeywords) {
+		if containsAny(s.preceding(norm, span.Start, 60), dict.OrderNumberKeywords) ||
+			containsAny(lower, dict.NonBankPinKeywords) {
 			boost -= s.keywordSuppress
 		}
 	case entity.CARD_NUMBER:
-		if containsAny(lower, dict.OrderNumberKeywords) {
+		if containsAny(s.preceding(norm, span.Start, 60), dict.OrderNumberKeywords) {
+			boost -= s.keywordSuppress
+		}
+		if containsAny(s.preceding(norm, span.Start, 60), dict.MetroTransportKeywords) {
+			boost -= s.keywordSuppress
+		}
+		if containsAny(s.preceding(norm, span.Start, 60), dict.LoyaltyCardKeywords) {
 			boost -= s.keywordSuppress
 		}
 	case entity.DEPARTMENT_CODE:
-		if strings.Contains(lower, "товара") || strings.Contains(lower, "товар") {
+		if strings.Contains(lower, "товара") || strings.Contains(lower, "товар") ||
+			strings.Contains(lower, "заявке") || strings.Contains(lower, "заявка") {
+			boost -= s.keywordSuppress
+		}
+	case entity.PASSPORT:
+		if containsAny(s.preceding(norm, span.Start, 60), dict.OrderArticleKeywords) {
+			boost -= s.keywordSuppress
+		}
+		// A generic "номер документа" is not a passport without passport
+		// context.
+		pre := s.preceding(norm, span.Start, 60)
+		if strings.Contains(pre, "номер документа") && !strings.Contains(pre, "паспорт") {
+			boost -= s.keywordSuppress
+		}
+	case entity.ADDRESS:
+		if containsAny(lower, dict.BankBranchKeywords) || containsAny(lower, dict.PublicPlaceKeywords) {
+			boost -= s.keywordSuppress
+		}
+	case entity.INN:
+		if containsAny(s.preceding(norm, span.Start, 60), dict.OrderArticleKeywords) {
+			boost -= s.keywordSuppress
+		}
+	case entity.PHONE:
+		if containsAny(lower, dict.PublicContactKeywords) {
+			boost -= s.keywordSuppress
+		}
+	case entity.EMAIL:
+		if containsAny(lower, dict.PublicContactKeywords) {
+			boost -= s.keywordSuppress
+		}
+	case entity.FULL_NAME:
+		if containsAny(lower, dict.KnownPersonContextKeywords) {
+			boost -= s.keywordSuppress
+		}
+	case entity.BIRTH_PLACE:
+		if containsAny(s.preceding(norm, span.Start, 60), dict.KnownPersonContextKeywords) {
 			boost -= s.keywordSuppress
 		}
 	}

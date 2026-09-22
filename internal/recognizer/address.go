@@ -4,9 +4,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/dict"
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/dict"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // AddressRecognizer detects addresses using context and address structure.
@@ -22,7 +22,7 @@ func NewAddressRecognizer(structure *dict.Dict) *AddressRecognizer {
 	}
 	return &AddressRecognizer{
 		structure: structure,
-		re:        regexp.MustCompile(`(?i)(?:адрес|адрес проживания|адрес регистрации|место жительства|место регистрации|проживает по адресу|зарегистрирован по адресу|зарегистрирована по адресу|прописан по адресу|прописана по адресу)[:\s]+([^\n]{5,120})`),
+		re:        regexp.MustCompile(`(?i)(?:адрес|адрес проживания|адрес регистрации|место жительства|место регистрации|проживает по адресу|живет по адресу|живёт по адресу|зарегистрирован по адресу|зарегистрирована по адресу|прописан по адресу|прописана по адресу)[:\s]+([^\n]{5,120})`),
 	}
 }
 
@@ -51,7 +51,7 @@ func (r *AddressRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSp
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.75,
+			Score:   0.6,
 			Sources: []entity.Source{entity.SourceRegex, entity.SourceContext},
 			Reason:  "regex:address",
 		})

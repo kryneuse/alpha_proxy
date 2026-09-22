@@ -59,6 +59,39 @@ type CandidateSpan struct {
 	Contextual bool
 }
 
+// EvidenceStrength ranks how strong the evidence for a candidate is.
+// Higher is stronger. Checksum/validated + context is the strongest signal;
+// a bare regex match is the weakest.
+func (c CandidateSpan) EvidenceStrength() int {
+	hasChecksum := false
+	hasContext := false
+	hasDict := false
+	for _, s := range c.Sources {
+		switch s {
+		case SourceChecksum:
+			hasChecksum = true
+		case SourceContext:
+			hasContext = true
+		case SourceDictionary:
+			hasDict = true
+		}
+	}
+	switch {
+	case hasChecksum && hasContext:
+		return 5
+	case hasChecksum:
+		return 4
+	case hasDict && hasContext:
+		return 3
+	case hasDict:
+		return 2
+	case hasContext:
+		return 2
+	default:
+		return 1
+	}
+}
+
 // Entity is the final, resolved personal-data entity returned by the engine.
 type Entity struct {
 	Type   Type

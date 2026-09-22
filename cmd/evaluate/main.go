@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alpha-proxy/rule-engine/internal/engine"
-	"github.com/alpha-proxy/rule-engine/internal/eval"
+	"github.com/kryneuse/alpha_proxy/internal/engine"
+	"github.com/kryneuse/alpha_proxy/internal/eval"
 )
 
 func main() {
@@ -16,9 +16,9 @@ func main() {
 	metrics := eval.Evaluate(e, eval.Dataset())
 	metrics.Print()
 
-	// Exit non-zero if recall is below a reasonable bar.
-	if metrics.Recall < 0.5 {
-		fmt.Fprintln(os.Stderr, "WARNING: recall below 0.5")
+	// Exit non-zero if span recall is below a reasonable bar.
+	if metrics.SpanRecall < 0.5 {
+		fmt.Fprintln(os.Stderr, "WARNING: span recall below 0.5")
 		os.Exit(1)
 	}
 }

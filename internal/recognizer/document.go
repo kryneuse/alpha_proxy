@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 // PassportRecognizer detects Russian passport series+number.
@@ -18,7 +18,7 @@ type PassportRecognizer struct {
 func NewPassportRecognizer() *PassportRecognizer {
 	return &PassportRecognizer{
 		re:      regexp.MustCompile(`\b\d{4}\s?\d{6}\b`),
-		splitRe: regexp.MustCompile(`серия\s+\d{2}\s?\d{2}\s+номер\s+\d{6}`),
+		splitRe: regexp.MustCompile(`серия\s+\d{2}\s?\d{2}\s+номер\s+\d{6}|серия\s+\d{4}\s*,\s*номер\s+\d{6}`),
 	}
 }
 
@@ -35,7 +35,7 @@ func (r *PassportRecognizer) Recognize(norm *normalize.Text) []entity.CandidateS
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.7,
+			Score:   0.4,
 			Sources: []entity.Source{entity.SourceRegex, entity.SourceFormat},
 			Reason:  "regex:passport",
 		})
@@ -47,7 +47,7 @@ func (r *PassportRecognizer) Recognize(norm *normalize.Text) []entity.CandidateS
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.75,
+			Score:   0.7,
 			Sources: []entity.Source{entity.SourceRegex, entity.SourceFormat},
 			Reason:  "regex:passport-split",
 		})
@@ -114,7 +114,7 @@ func (r *DriverLicenseRecognizer) Recognize(norm *normalize.Text) []entity.Candi
 			Text:    norm.Original[oStart:oEnd],
 			Start:   oStart,
 			End:     oEnd,
-			Score:   0.5,
+			Score:   0.4,
 			Sources: []entity.Source{entity.SourceRegex, entity.SourceFormat},
 			Reason:  "regex:driver-license",
 		})
@@ -130,18 +130,26 @@ type PassportIssuerRecognizer struct {
 // NewPassportIssuerRecognizer builds a passport issuer recognizer.
 func NewPassportIssuerRecognizer() *PassportIssuerRecognizer {
 	return &PassportIssuerRecognizer{
-		re: regexp.MustCompile(`(?:выдан|выдано|орган, выдавший|кем выдан)[:\s]+([а-яёa-z\s.\-]{5,80}?)(?:,|$)`),
+		re: regexp.MustCompile(`(?:выдан|выдано|орган, выдавший|кем выдан)[:\s]+([а-яёa-z\s.\-]{5,80}?)(?:,|\s+\d|$)`),
 	}
 }
 
 // Type returns the entity type.
 func (r *PassportIssuerRecognizer) Type() entity.Type { return entity.PASSPORT_ISSUER }
 
-// Recognize finds passport issuer candidates.
+// Recognize finds passport issuer candidates. The emitted span covers only
+// the issuer text, not the leading keyword ("выдан") and not a following date.
 func (r *PassportIssuerRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSpan {
 	var spans []entity.CandidateSpan
 	for _, loc := range r.re.FindAllStringIndex(norm.Normalized, -1) {
-		oStart, oEnd := norm.MapSpan(norm.ByteToRune(loc[0]), norm.ByteToRune(loc[1]))
+		sub := r.re.FindStringSubmatchIndex(norm.Normalized[loc[0]:loc[1]])
+		if len(sub) < 4 || sub[2] < 0 || sub[3] < 0 {
+			continue
+		}
+		// sub[2],sub[3] are byte offsets of capture group 1 within the match.
+		startByte := loc[0] + sub[2]
+		endByte := loc[0] + sub[3]
+		oStart, oEnd := norm.MapSpan(norm.ByteToRune(startByte), norm.ByteToRune(endByte))
 		spans = append(spans, entity.CandidateSpan{
 			Type:    entity.PASSPORT_ISSUER,
 			Text:    norm.Original[oStart:oEnd],

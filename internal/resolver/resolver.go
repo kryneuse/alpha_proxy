@@ -6,7 +6,7 @@ package resolver
 import (
 	"sort"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
 )
 
 // Resolver resolves candidate spans into final entities.
@@ -30,10 +30,14 @@ func (r *Resolver) Resolve(spans []entity.CandidateSpan) []entity.Entity {
 		}
 	}
 
-	// 2. Sort by start, then by score descending (more specific first).
+	// 2. Sort by start, then by evidence strength descending, then score.
 	sort.SliceStable(filtered, func(i, j int) bool {
 		if filtered[i].Start != filtered[j].Start {
 			return filtered[i].Start < filtered[j].Start
+		}
+		si, sj := filtered[i].EvidenceStrength(), filtered[j].EvidenceStrength()
+		if si != sj {
+			return si > sj
 		}
 		return filtered[i].Score > filtered[j].Score
 	})
@@ -44,8 +48,11 @@ func (r *Resolver) Resolve(spans []entity.CandidateSpan) []entity.Entity {
 		overlap := false
 		for i, keep := range resolved {
 			if spansOverlap(s, keep) {
-				// Prefer the higher-scored / more validated candidate.
-				if s.Score > keep.Score {
+				// Prefer the candidate with stronger evidence; tie-break by
+				// score. This keeps a checksum+context candidate over a bare
+				// regex candidate even if the regex candidate scored higher.
+				if s.EvidenceStrength() > keep.EvidenceStrength() ||
+					(s.EvidenceStrength() == keep.EvidenceStrength() && s.Score > keep.Score) {
 					resolved[i] = s
 				}
 				overlap = true

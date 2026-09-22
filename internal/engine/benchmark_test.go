@@ -3,8 +3,8 @@ package engine
 import (
 	"testing"
 
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
-	"github.com/alpha-proxy/rule-engine/internal/recognizer"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/recognizer"
 )
 
 var benchmarkText = "Клиент: Иванов Иван Петрович, дата рождения 15.03.1990, " +

@@ -1,22 +1,22 @@
 package recognizer
 
 import (
-	"regexp"
 	"strings"
 
-	"github.com/alpha-proxy/rule-engine/internal/dict"
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/dict"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
-// FullNameRecognizer detects full names using context, a name dictionary and
-// Russian name-ending heuristics. It never treats arbitrary capitalized words
-// as personal data.
+// FullNameRecognizer detects full names using a name dictionary and Russian
+// name-ending heuristics. It finds maximal runs of name-like tokens so that
+// leading context words ("Сотрудник") and trailing ordinary words ("гулял")
+// are not included in the span. Known-person names are treated as a reference
+// signal (lower base score), not an absolute ban; context decides.
 type FullNameRecognizer struct {
 	firstNames *dict.Dict
 	lastNames  *dict.Dict
 	known      *dict.Dict
-	re         *regexp.Regexp
 }
 
 // NewFullNameRecognizer builds a full name recognizer.
@@ -34,39 +34,50 @@ func NewFullNameRecognizer(firstNames, lastNames, known *dict.Dict) *FullNameRec
 		firstNames: firstNames,
 		lastNames:  lastNames,
 		known:      known,
-		re:         regexp.MustCompile(`[а-яё]+(?:\s+[а-яё]+){1,2}`),
 	}
 }
 
 // Type returns the entity type.
 func (r *FullNameRecognizer) Type() entity.Type { return entity.FULL_NAME }
 
-// Recognize finds full name candidates.
+// Recognize finds full name candidates as maximal runs of name-like tokens.
 func (r *FullNameRecognizer) Recognize(norm *normalize.Text) []entity.CandidateSpan {
+	words := tokenize(norm.Normalized)
 	var spans []entity.CandidateSpan
-	for _, loc := range r.re.FindAllStringIndex(norm.Normalized, -1) {
-		text := norm.Normalized[loc[0]:loc[1]]
-		words := strings.Fields(text)
-		if len(words) < 2 || len(words) > 3 {
+
+	i := 0
+	for i < len(words) {
+		if !r.isNameLike(words[i]) {
+			i++
 			continue
 		}
-
-		// Verify word boundaries manually (RE2 \b is ASCII-only).
-		if !isWordStart(norm.Normalized, loc[0]) || !isWordEnd(norm.Normalized, loc[1]) {
+		// Build a maximal run of name-like tokens (max 3).
+		j := i
+		for j < len(words) && j-i < 3 && r.isNameLike(words[j]) {
+			j++
+		}
+		if j-i < 2 {
+			i++
 			continue
 		}
-
-		// Skip known famous persons.
-		if r.known.Contains(text) {
-			continue
-		}
-
-		score := r.scoreName(words)
+		// The run [i,j) is a candidate name.
+		startByte := words[i].start
+		endByte := words[j-1].end
+		text := norm.Normalized[startByte:endByte]
+		score := r.scoreName(words[i:j])
 		if score <= 0 {
+			i++
 			continue
 		}
-
-		oStart, oEnd := norm.MapSpan(norm.ByteToRune(loc[0]), norm.ByteToRune(loc[1]))
+		// Known-person reference: lower the base score as a weak negative
+		// signal, but do not drop the candidate outright.
+		if r.known.Contains(text) {
+			score -= 0.15
+			if score < 0 {
+				score = 0
+			}
+		}
+		oStart, oEnd := norm.MapSpan(norm.ByteToRune(startByte), norm.ByteToRune(endByte))
 		spans = append(spans, entity.CandidateSpan{
 			Type:    entity.FULL_NAME,
 			Text:    norm.Original[oStart:oEnd],
@@ -76,44 +87,58 @@ func (r *FullNameRecognizer) Recognize(norm *normalize.Text) []entity.CandidateS
 			Sources: []entity.Source{entity.SourceRegex, entity.SourceDictionary},
 			Reason:  "name-heuristic",
 		})
+		i = j
 	}
 	return spans
 }
 
-// isWordStart reports whether pos is the start of a word (prev not a letter,
-// current is a letter).
-func isWordStart(s string, pos int) bool {
-	runes := []rune(s)
-	idx := len([]rune(s[:pos]))
-	before := idx > 0 && isLetter(runes[idx-1])
-	after := idx < len(runes) && isLetter(runes[idx])
-	return !before && after
+// token is a word with its byte offsets in the normalized string.
+type token struct {
+	text  string
+	start int
+	end   int
 }
 
-// isWordEnd reports whether pos is the end of a word (prev is a letter,
-// current not a letter).
-func isWordEnd(s string, pos int) bool {
+// tokenize splits the normalized text into words with byte offsets.
+func tokenize(s string) []token {
+	var out []token
 	runes := []rune(s)
-	idx := len([]rune(s[:pos]))
-	before := idx > 0 && isLetter(runes[idx-1])
-	after := idx < len(runes) && isLetter(runes[idx])
-	return before && !after
+	i := 0
+	for i < len(runes) {
+		// Skip non-letters.
+		for i < len(runes) && !isLetter(runes[i]) {
+			i++
+		}
+		if i >= len(runes) {
+			break
+		}
+		startRune := i
+		for i < len(runes) && isLetter(runes[i]) {
+			i++
+		}
+		startByte := len(string(runes[:startRune]))
+		endByte := len(string(runes[:i]))
+		out = append(out, token{text: s[startByte:endByte], start: startByte, end: endByte})
+	}
+	return out
 }
 
-// isLetter reports whether r is a Cyrillic or latin letter.
-func isLetter(r rune) bool {
-	return (r >= 'а' && r <= 'я') || r == 'ё' ||
-		(r >= 'a' && r <= 'z') || (r >= 'А' && r <= 'Я') || r == 'Ё' ||
-		(r >= 'A' && r <= 'Z')
+// isNameLike reports whether a token looks like a name component.
+func (r *FullNameRecognizer) isNameLike(t token) bool {
+	lower := strings.ToLower(t.text)
+	return r.firstNames.Contains(lower) ||
+		r.lastNames.Contains(lower) ||
+		isPatronymic(lower) ||
+		isLastNameEnding(lower)
 }
 
 // scoreName scores a name candidate. Returns 0 if it is not a plausible name.
-func (r *FullNameRecognizer) scoreName(words []string) float64 {
+func (r *FullNameRecognizer) scoreName(tokens []token) float64 {
 	score := 0.0
 	matched := 0
 
-	for _, w := range words {
-		lower := strings.ToLower(w)
+	for _, t := range tokens {
+		lower := strings.ToLower(t.text)
 		if r.firstNames.Contains(lower) {
 			score += 0.4
 			matched++
@@ -129,21 +154,26 @@ func (r *FullNameRecognizer) scoreName(words []string) float64 {
 		}
 	}
 
-	// Require at least one strong signal (dictionary match or patronymic).
 	if matched == 0 {
 		return 0
 	}
 
 	// A 3-word name with a patronymic is a strong signal.
-	if len(words) == 3 && isPatronymic(strings.ToLower(words[1])) {
+	if len(tokens) == 3 && isPatronymic(strings.ToLower(tokens[1].text)) {
 		score += 0.2
 	}
 
-	// Normalize to [0,1].
 	if score > 1 {
 		score = 1
 	}
 	return score
+}
+
+// isLetter reports whether r is a Cyrillic or latin letter.
+func isLetter(r rune) bool {
+	return (r >= 'а' && r <= 'я') || r == 'ё' ||
+		(r >= 'a' && r <= 'z') || (r >= 'А' && r <= 'Я') || r == 'Ё' ||
+		(r >= 'A' && r <= 'Z')
 }
 
 // isPatronymic reports whether a word looks like a Russian patronymic.

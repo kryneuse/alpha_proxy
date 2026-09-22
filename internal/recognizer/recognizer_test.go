@@ -3,8 +3,8 @@ package recognizer
 import (
 	"testing"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
-	"github.com/alpha-proxy/rule-engine/internal/normalize"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/normalize"
 )
 
 func findSpans(t *testing.T, rec Recognizer, text string) []entity.CandidateSpan {
@@ -120,6 +120,16 @@ func TestCitizenshipRecognizer(t *testing.T) {
 	if spans[0].Text != "Российская Федерация" {
 		t.Errorf("unexpected text %q", spans[0].Text)
 	}
+	// Case-ending tolerance: "Казахстана" should match "Казахстан".
+	spans = findSpans(t, rec, "Гражданин Казахстана")
+	if len(spans) != 1 || spans[0].Text != "Казахстана" {
+		t.Errorf("expected citizenship 'Казахстана', got %+v", spans)
+	}
+	// Punctuation tolerance: "РФ." should match "РФ".
+	spans = findSpans(t, rec, "Гражданство: РФ.")
+	if len(spans) != 1 || spans[0].Text != "РФ" {
+		t.Errorf("expected citizenship 'РФ', got %+v", spans)
+	}
 }
 
 func TestBirthPlaceRecognizer(t *testing.T) {
@@ -132,15 +142,26 @@ func TestBirthPlaceRecognizer(t *testing.T) {
 
 func TestFullNameRecognizer(t *testing.T) {
 	rec := NewFullNameRecognizer(nil, nil, nil)
-	// Known person should be skipped.
+	// A known person is emitted by the recognizer but with a reduced score;
+	// the context scorer suppresses it in literary context. Here we only
+	// verify the recognizer still finds the name tokens.
 	spans := findSpans(t, rec, "Александр Сергеевич Пушкин")
-	if len(spans) != 0 {
-		t.Errorf("expected 0 for known person, got %d", len(spans))
+	if len(spans) != 1 {
+		t.Errorf("expected 1 name candidate for known person, got %d", len(spans))
 	}
 	// Plausible client name with dictionary match.
 	spans = findSpans(t, rec, "Иван Петров")
 	if len(spans) != 1 {
 		t.Errorf("expected 1 name, got %d", len(spans))
+	}
+	// Leading context word and trailing ordinary word must not be included.
+	spans = findSpans(t, rec, "Сотрудник Иван Петров подал заявку")
+	if len(spans) != 1 || spans[0].Text != "Иван Петров" {
+		t.Errorf("expected span 'Иван Петров', got %+v", spans)
+	}
+	spans = findSpans(t, rec, "Иван Петров гулял в парке")
+	if len(spans) != 1 || spans[0].Text != "Иван Петров" {
+		t.Errorf("expected span 'Иван Петров', got %+v", spans)
 	}
 }
 
@@ -165,9 +186,18 @@ func TestDateRecognizer(t *testing.T) {
 			t.Errorf("expected 1 date for %q, got %d", tc, len(spans))
 		}
 	}
-	// Invalid date.
-	spans := findSpans(t, rec, "32.13.2000")
-	if len(spans) != 0 {
-		t.Errorf("expected 0 for invalid date, got %d", len(spans))
+	// Invalid dates.
+	for _, tc := range []string{"32.13.2000", "31.02.2000", "30.02.2001", "31.04.2000"} {
+		spans := findSpans(t, rec, "дата: "+tc)
+		if len(spans) != 0 {
+			t.Errorf("expected 0 for invalid date %q, got %d", tc, len(spans))
+		}
+	}
+	// Leap year: Feb 29 is valid in 2000, invalid in 2001.
+	if spans := findSpans(t, rec, "дата: 29.02.2000"); len(spans) != 1 {
+		t.Errorf("expected 1 for leap-year date 29.02.2000, got %d", len(spans))
+	}
+	if spans := findSpans(t, rec, "дата: 29.02.2001"); len(spans) != 0 {
+		t.Errorf("expected 0 for non-leap-year date 29.02.2001, got %d", len(spans))
 	}
 }

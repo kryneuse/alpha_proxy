@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/alpha-proxy/rule-engine/internal/entity"
+	"github.com/kryneuse/alpha_proxy/internal/entity"
 )
 
 func hasEntity(entities []entity.Entity, typ entity.Type) bool {
