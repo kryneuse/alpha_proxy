@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"alpha_proxy/internal/contract"
-	"alpha_proxy/internal/observability"
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/observability"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 func TestRequestIDPreservesValidInput(t *testing.T) {

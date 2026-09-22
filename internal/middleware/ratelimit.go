@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"alpha_proxy/internal/auth"
-	"alpha_proxy/internal/ratelimit"
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/auth"
+	"github.com/kryneuse/alpha_proxy/internal/ratelimit"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 // GlobalRateLimit applies a global token bucket before authentication. A nil

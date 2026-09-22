@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"alpha_proxy/internal/config"
+	"github.com/kryneuse/alpha_proxy/internal/config"
 )
 
 func TestAPIKeyValid(t *testing.T) {

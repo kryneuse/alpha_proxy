@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"alpha_proxy/internal/observability"
-	"alpha_proxy/internal/ratelimit"
+	"github.com/kryneuse/alpha_proxy/internal/observability"
+	"github.com/kryneuse/alpha_proxy/internal/ratelimit"
 )
 
 // fakeClock is a deterministic clock for rate limit tests.

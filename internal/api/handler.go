@@ -12,9 +12,9 @@ import (
 	"mime"
 	"net/http"
 
-	"alpha_proxy/internal/auth"
-	"alpha_proxy/internal/contract"
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/auth"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 // ProcessRoute is the registered route pattern for the process endpoint.
