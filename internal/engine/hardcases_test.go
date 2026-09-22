@@ -80,6 +80,18 @@ func TestHardNegativeCases(t *testing.T) {
 		// Non-bank CVV/PIN.
 		"Код безопасности 123 для замка.",
 		"PIN 1234 от телефона.",
+		"код 123 от замка.",
+		"код безопасности 123 для сейфа.",
+		"PIN SIM-карты 1234.",
+		"код роутера 1234.",
+		// Department codes without passport context.
+		"код заявки 770-001.",
+		// Bare driver license / passport numbers without context.
+		"77 12 345678",
+		"7712 345678",
+		"4510 123456",
+		// Public office address.
+		"Адрес офиса: г. Москва, ул. Тверская, д. 1.",
 	}
 	for _, c := range cases {
 		got := e.Analyze(c)
@@ -106,6 +118,17 @@ func TestPositiveCases(t *testing.T) {
 		{"Родился в 1990 году в Москве", entity.BIRTH_PLACE},
 		{"Россия — страна. Гражданство клиента Россия", entity.CITIZENSHIP},
 		{"Паспорт: серия 4510, номер 123456", entity.PASSPORT},
+		{"Водительское удостоверение 77 12 345678", entity.DRIVER_LICENSE},
+		{"ВУ: 77 12 345678", entity.DRIVER_LICENSE},
+		{"Водительское удостоверение 77-12 345678", entity.DRIVER_LICENSE},
+		{"Водительское удостоверение 77 12 №345678", entity.DRIVER_LICENSE},
+		{"паспорт 4510 №123456", entity.PASSPORT},
+		{"паспорт 45 10 № 123456", entity.PASSPORT},
+		{"серия 45 10, номер 123456", entity.PASSPORT},
+		{"Дата выдачи паспорта: 20.07.2015", entity.PASSPORT_ISSUE_DATE},
+		{"Родился 15 марта 1990 года", entity.BIRTH_DATE},
+		{"является гражданином Армении", entity.CITIZENSHIP},
+		{"код подразделения 770-001", entity.DEPARTMENT_CODE},
 	}
 	for _, c := range cases {
 		got := e.Analyze(c.text)
@@ -178,5 +201,75 @@ func TestBirthPlaceWithYear(t *testing.T) {
 	}
 	if !hasPlace {
 		t.Errorf("expected BIRTH_PLACE 'Москве', got %+v", got)
+	}
+}
+
+// TestExactSpans asserts exact Type/Text/Start/End for the fixed formats.
+func TestExactSpans(t *testing.T) {
+	e := New(Options{})
+	cases := []struct {
+		text string
+		typ  entity.Type
+		want string
+	}{
+		{"Водительское удостоверение 77 12 345678", entity.DRIVER_LICENSE, "77 12 345678"},
+		{"ВУ: 77 12 345678", entity.DRIVER_LICENSE, "77 12 345678"},
+		{"Водительское удостоверение 77-12 345678", entity.DRIVER_LICENSE, "77-12 345678"},
+		{"Водительское удостоверение 77 12 №345678", entity.DRIVER_LICENSE, "77 12 №345678"},
+		{"паспорт 4510 №123456", entity.PASSPORT, "4510 №123456"},
+		{"паспорт 45 10 № 123456", entity.PASSPORT, "45 10 № 123456"},
+		{"серия 45 10, номер 123456", entity.PASSPORT, "серия 45 10, номер 123456"},
+		{"Дата выдачи паспорта: 20.07.2015", entity.PASSPORT_ISSUE_DATE, "20.07.2015"},
+		{"Родился 15 марта 1990 года", entity.BIRTH_DATE, "15 марта 1990"},
+		{"является гражданином Армении", entity.CITIZENSHIP, "Армении"},
+		{"код подразделения 770-001", entity.DEPARTMENT_CODE, "770-001"},
+	}
+	for _, c := range cases {
+		got := e.Analyze(c.text)
+		found := false
+		for _, g := range got {
+			if g.Type == c.typ && g.Text == c.want {
+				// Verify exact byte offsets slice the original correctly.
+				if c.text[g.Start:g.End] != g.Text {
+					t.Errorf("%q: offset mismatch %q != %q", c.text, c.text[g.Start:g.End], g.Text)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%q: expected %s %q, got %+v", c.text, c.typ, c.want, got)
+		}
+	}
+}
+
+// TestDateContextClassification asserts that the same date is classified by
+// context as BIRTH_DATE or PASSPORT_ISSUE_DATE, never both on one span.
+func TestDateContextClassification(t *testing.T) {
+	e := New(Options{})
+	cases := []struct {
+		text string
+		typ  entity.Type
+	}{
+		{"Дата рождения: 15.03.1990", entity.BIRTH_DATE},
+		{"Родился 15 марта 1990 года", entity.BIRTH_DATE},
+		{"Паспорт выдан 20.07.2015", entity.PASSPORT_ISSUE_DATE},
+		{"Дата выдачи паспорта: 20.07.2015", entity.PASSPORT_ISSUE_DATE},
+	}
+	for _, c := range cases {
+		got := e.Analyze(c.text)
+		// Exactly one date entity, of the expected type.
+		dateCount := 0
+		for _, g := range got {
+			if g.Type == entity.BIRTH_DATE || g.Type == entity.PASSPORT_ISSUE_DATE {
+				dateCount++
+				if g.Type != c.typ {
+					t.Errorf("%q: expected %s, got %s", c.text, c.typ, g.Type)
+				}
+			}
+		}
+		if dateCount != 1 {
+			t.Errorf("%q: expected exactly 1 date entity, got %d (%+v)", c.text, dateCount, got)
+		}
 	}
 }

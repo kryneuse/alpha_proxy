@@ -17,8 +17,8 @@ type PassportRecognizer struct {
 // NewPassportRecognizer builds a passport recognizer.
 func NewPassportRecognizer() *PassportRecognizer {
 	return &PassportRecognizer{
-		re:      regexp.MustCompile(`\b\d{4}\s?\d{6}\b`),
-		splitRe: regexp.MustCompile(`серия\s+\d{2}\s?\d{2}\s+номер\s+\d{6}|серия\s+\d{4}\s*,\s*номер\s+\d{6}`),
+		re:      regexp.MustCompile(`\b\d{2}\s?\d{2}\s?№?\s?\d{6}\b`),
+		splitRe: regexp.MustCompile(`серия\s+\d{2}\s?\d{2}\s*,?\s*номер\s+\d{6}|серия\s+\d{4}\s*,?\s*номер\s+\d{6}`),
 	}
 }
 
@@ -97,7 +97,7 @@ type DriverLicenseRecognizer struct {
 // NewDriverLicenseRecognizer builds a driver license recognizer.
 func NewDriverLicenseRecognizer() *DriverLicenseRecognizer {
 	return &DriverLicenseRecognizer{
-		re: regexp.MustCompile(`\b\d{4}\s?\d{6}\b`),
+		re: regexp.MustCompile(`\b(?:\d{4}\s?\d{6}|\d{2}\s?[-–]?\s?\d{2}\s?№?\s?\d{6})\b`),
 	}
 }
 

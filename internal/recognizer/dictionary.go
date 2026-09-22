@@ -82,22 +82,51 @@ func tokenOffsets(s string, words []string) []int {
 }
 
 // matchCountry reports whether the phrase matches a country name, tolerating
-// common Russian case endings (e.g. "Казахстана" -> "Казахстан").
+// common Russian case endings (e.g. "Казахстана" -> "Казахстан",
+// "Армении" -> "Армения").
 func (r *CitizenshipRecognizer) matchCountry(phrase string) bool {
 	if r.countries.Contains(phrase) {
 		return true
 	}
-	// Try stripping a trailing case ending from the last word.
 	words := strings.Fields(phrase)
 	if len(words) == 0 {
 		return false
 	}
 	last := words[len(words)-1]
-	for _, suffix := range []string{"ов", "ев", "ин", "ын", "а", "я", "е", "у", "ой", "ий", "ый"} {
-		if len(last) > len(suffix)+2 && strings.HasSuffix(last, suffix) {
-			stem := last[:len(last)-len(suffix)]
-			// Rebuild the phrase with the stemmed last word.
-			words[len(words)-1] = stem
+
+	// Direct case-ending replacements for feminine/neuter countries.
+	replacements := []struct{ from, to string }{
+		{"ии", "ия"},  // Армении -> Армения, Германии -> Германия
+		{"ией", "ия"}, // Арменией -> Армения
+		{"ию", "ия"},  // Армению -> Армения
+		{"е", "а"},    // Грузии -> Грузия (handled by ии), Канаде -> Канада
+		{"е", "я"},    // Турции -> Турция
+	}
+	for _, rep := range replacements {
+		if len(last) > len(rep.from)+2 && strings.HasSuffix(last, rep.from) {
+			candidate := last[:len(last)-len(rep.from)] + rep.to
+			words[len(words)-1] = candidate
+			if r.countries.Contains(strings.Join(words, " ")) {
+				return true
+			}
+		}
+	}
+
+	// Try stripping a trailing case ending from the last word.
+	suffixes := []string{"ов", "ев", "ин", "ын", "ии", "ой", "ий", "ый", "а", "я", "е", "у", "ом", "ем"}
+	for _, suffix := range suffixes {
+		if len(last) <= len(suffix)+2 || !strings.HasSuffix(last, suffix) {
+			continue
+		}
+		stem := last[:len(last)-len(suffix)]
+		// Try the bare stem.
+		words[len(words)-1] = stem
+		if r.countries.Contains(strings.Join(words, " ")) {
+			return true
+		}
+		// Try re-appending a nominative ending (feminine "а"/"я").
+		for _, nom := range []string{"а", "я"} {
+			words[len(words)-1] = stem + nom
 			if r.countries.Contains(strings.Join(words, " ")) {
 				return true
 			}

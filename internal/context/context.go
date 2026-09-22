@@ -43,7 +43,7 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 	case entity.BIRTH_DATE:
 		// For dates, use the immediately preceding context to decide whether
 		// it is a birth date or a passport issue date.
-		pre := s.preceding(norm, span.Start, 14)
+		pre := s.preceding(norm, span.Start, 25)
 		if containsAny(pre, dict.IssueDateKeywords) {
 			// A date near issue keywords is a passport issue date.
 			span.Type = entity.PASSPORT_ISSUE_DATE
@@ -75,7 +75,8 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 		}
 	case entity.DEPARTMENT_CODE:
 		pre := s.preceding(norm, span.Start, 60)
-		if strings.Contains(pre, "код подразделения") || containsAny(pre, dict.DepartmentCodeKeywords) {
+		if strings.Contains(pre, "код подразделения") || strings.Contains(pre, "кп:") ||
+			strings.Contains(pre, "кп ") {
 			boost = s.keywordBoost
 			contextual = true
 		}
@@ -165,7 +166,8 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 		}
 	case entity.DEPARTMENT_CODE:
 		if strings.Contains(lower, "товара") || strings.Contains(lower, "товар") ||
-			strings.Contains(lower, "заявке") || strings.Contains(lower, "заявка") {
+			strings.Contains(lower, "заявке") || strings.Contains(lower, "заявка") ||
+			strings.Contains(lower, "заявки") || strings.Contains(lower, "артикул") {
 			boost -= s.keywordSuppress
 		}
 	case entity.PASSPORT:

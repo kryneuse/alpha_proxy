@@ -90,12 +90,18 @@ func Dataset() []Sample {
 		// ================= PASSPORT_ISSUE_DATE =================
 		{Text: "Паспорт выдан 20.04.2010", Expected: []Expected{exp("Паспорт выдан 20.04.2010", "PASSPORT_ISSUE_DATE", "20.04.2010")}},
 		{Text: "Дата выдачи: 05.11.2015", Expected: []Expected{exp("Дата выдачи: 05.11.2015", "PASSPORT_ISSUE_DATE", "05.11.2015")}},
+		{Text: "Дата выдачи паспорта: 20.07.2015", Expected: []Expected{exp("Дата выдачи паспорта: 20.07.2015", "PASSPORT_ISSUE_DATE", "20.07.2015")}},
+		{Text: "Родился 15 марта 1990 года", Expected: []Expected{exp("Родился 15 марта 1990 года", "BIRTH_DATE", "15 марта 1990")}},
 		{Text: "Паспорт выдан 15 марта 2008", Expected: []Expected{exp("Паспорт выдан 15 марта 2008", "PASSPORT_ISSUE_DATE", "15 марта 2008")}},
 
 		// ================= DRIVER_LICENSE =================
 		{Text: "Водительское удостоверение 7712 345678", Expected: []Expected{exp("Водительское удостоверение 7712 345678", "DRIVER_LICENSE", "7712 345678")}},
 		{Text: "Водительские права 4510 123456", Expected: []Expected{exp("Водительские права 4510 123456", "DRIVER_LICENSE", "4510 123456")}},
 		{Text: "В/у 7712 345678", Expected: []Expected{exp("В/у 7712 345678", "DRIVER_LICENSE", "7712 345678")}},
+		{Text: "Водительское удостоверение 77 12 345678", Expected: []Expected{exp("Водительское удостоверение 77 12 345678", "DRIVER_LICENSE", "77 12 345678")}},
+		{Text: "ВУ: 77 12 345678", Expected: []Expected{exp("ВУ: 77 12 345678", "DRIVER_LICENSE", "77 12 345678")}},
+		{Text: "Водительское удостоверение 77-12 345678", Expected: []Expected{exp("Водительское удостоверение 77-12 345678", "DRIVER_LICENSE", "77-12 345678")}},
+		{Text: "Водительское удостоверение 77 12 №345678", Expected: []Expected{exp("Водительское удостоверение 77 12 №345678", "DRIVER_LICENSE", "77 12 №345678")}},
 
 		// ================= ADDRESS =================
 		{Text: "Адрес: г. Москва, ул. Тверская, д. 10, кв. 5", Expected: []Expected{exp("Адрес: г. Москва, ул. Тверская, д. 10, кв. 5", "ADDRESS", "г. Москва, ул. Тверская, д. 10, кв. 5")}},
@@ -186,8 +192,12 @@ func Dataset() []Sample {
 		{Text: "Паспорт 4509 876543", Expected: []Expected{exp("Паспорт 4509 876543", "PASSPORT", "4509 876543")}},
 		{Text: "Серия 45 09 номер 876543", Expected: []Expected{exp("Серия 45 09 номер 876543", "PASSPORT", "Серия 45 09 номер 876543")}},
 		{Text: "Паспорт: серия 4510, номер 123456", Expected: []Expected{exp("Паспорт: серия 4510, номер 123456", "PASSPORT", "серия 4510, номер 123456")}},
+		{Text: "паспорт 4510 №123456", Expected: []Expected{exp("паспорт 4510 №123456", "PASSPORT", "4510 №123456")}},
+		{Text: "паспорт 45 10 № 123456", Expected: []Expected{exp("паспорт 45 10 № 123456", "PASSPORT", "45 10 № 123456")}},
+		{Text: "серия 45 10, номер 123456", Expected: []Expected{exp("серия 45 10, номер 123456", "PASSPORT", "серия 45 10, номер 123456")}},
 		{Text: "Гражданство: Украина", Expected: []Expected{exp("Гражданство: Украина", "CITIZENSHIP", "Украина")}},
 		{Text: "Гражданин Казахстана", Expected: []Expected{exp("Гражданин Казахстана", "CITIZENSHIP", "Казахстана")}},
+		{Text: "является гражданином Армении", Expected: []Expected{exp("является гражданином Армении", "CITIZENSHIP", "Армении")}},
 		{Text: "Гражданство заявителя Россия", Expected: []Expected{exp("Гражданство заявителя Россия", "CITIZENSHIP", "Россия")}},
 		{Text: "Россия — страна. Гражданство клиента Россия", Expected: []Expected{{Type: entity.CITIZENSHIP, Text: "Россия", Start: 69, End: 81}}},
 		{Text: "Паспорт выдан ОМВД России по г. Казани", Expected: []Expected{exp("Паспорт выдан ОМВД России по г. Казани", "PASSPORT_ISSUER", "ОМВД России по г. Казани")}},
@@ -293,5 +303,17 @@ func Dataset() []Sample {
 		// Non-bank CVV/PIN.
 		{Text: "Код безопасности 123 для замка.", Negative: true},
 		{Text: "PIN 1234 от телефона.", Negative: true},
+		{Text: "код 123 от замка.", Negative: true},
+		{Text: "код безопасности 123 для сейфа.", Negative: true},
+		{Text: "PIN SIM-карты 1234.", Negative: true},
+		{Text: "код роутера 1234.", Negative: true},
+		// Department codes without passport context.
+		{Text: "код заявки 770-001.", Negative: true},
+		// Bare driver license / passport numbers without context.
+		{Text: "77 12 345678", Negative: true},
+		{Text: "7712 345678", Negative: true},
+		{Text: "4510 123456", Negative: true},
+		// Public office address.
+		{Text: "Адрес офиса: г. Москва, ул. Тверская, д. 1.", Negative: true},
 	}
 }
