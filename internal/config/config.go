@@ -85,6 +85,9 @@ type Config struct {
 	OverloadRetryAfter time.Duration
 	// MetricsEnabled enables the Prometheus metrics endpoint.
 	MetricsEnabled bool
+	// ShutdownTimeout bounds how long the server waits for in-flight requests to
+	// drain during a graceful shutdown.
+	ShutdownTimeout time.Duration
 }
 
 // Load reads configuration from the environment and validates it.
@@ -168,6 +171,11 @@ func Load() (Config, error) {
 	} else {
 		cfg.MetricsEnabled = v
 	}
+	if v, err := durEnv("ALPHA_PROXY_SHUTDOWN_TIMEOUT", 15*time.Second); err != nil {
+		fail(err)
+	} else {
+		cfg.ShutdownTimeout = v
+	}
 
 	if file := os.Getenv("ALPHA_PROXY_SYSTEMS_FILE"); file != "" {
 		systems, err := loadSystems(file)
@@ -206,6 +214,9 @@ func (c Config) Validate() error {
 	}
 	if c.OverloadRetryAfter <= 0 {
 		return fmt.Errorf("config: overload retry after must be positive")
+	}
+	if c.ShutdownTimeout <= 0 {
+		return fmt.Errorf("config: shutdown timeout must be positive")
 	}
 	if err := validateRateLimit(c.GlobalRateLimitRPS, c.GlobalRateLimitBurst, "global"); err != nil {
 		return err
