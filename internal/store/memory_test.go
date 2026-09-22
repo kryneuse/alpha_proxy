@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"sync"
 	"testing"
@@ -12,15 +13,8 @@ import (
 
 func newTestSession(payloadID string) *pii.Session {
 	return &pii.Session{
-		PayloadID: payloadID,
-		Original:  "original",
-		Masked:    "masked",
-		MLMappings: []pii.TokenMapping{
-			{Token: "tok1", Original: "orig1", Kind: pii.PIIKindEmail, Source: pii.SourceML, Start: 0, End: 5},
-		},
-		BackendMappings: []pii.TokenMapping{
-			{Token: "tok2", Original: "orig2", Kind: pii.PIIKindPhone, Source: pii.SourceReg, Start: 6, End: 11},
-		},
+		PayloadID:   payloadID,
+		PayloadHash: sha256.Sum256([]byte(payloadID)),
 		Mappings: []pii.TokenMapping{
 			{Token: "tok1", Original: "orig1", Kind: pii.PIIKindEmail, Source: pii.SourceML, Start: 0, End: 5},
 			{Token: "tok2", Original: "orig2", Kind: pii.PIIKindPhone, Source: pii.SourceReg, Start: 6, End: 11},
@@ -51,7 +45,7 @@ func TestPutIfAbsentAndGet(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected session to be returned")
 	}
-	if got.PayloadID != "id-1" || got.Original != "original" || got.Masked != "masked" {
+	if got.PayloadID != "id-1" || got.PayloadHash != sha256.Sum256([]byte("id-1")) {
 		t.Fatalf("unexpected session: %+v", got)
 	}
 	if len(got.Mappings) != 2 {
@@ -69,7 +63,7 @@ func TestPutIfAbsentDoesNotOverwrite(t *testing.T) {
 	}
 
 	overwrite := newTestSession("id-1")
-	overwrite.Original = "changed"
+	overwrite.PayloadHash = sha256.Sum256([]byte("changed"))
 
 	added, err = s.PutIfAbsent(ctx, overwrite)
 	if err != nil {
@@ -83,8 +77,8 @@ func TestPutIfAbsentDoesNotOverwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get returned error: %v", err)
 	}
-	if got.Original != "original" {
-		t.Fatalf("session was overwritten, got Original=%q", got.Original)
+	if got.PayloadHash != sha256.Sum256([]byte("id-1")) {
+		t.Fatalf("session was overwritten, got PayloadHash=%x", got.PayloadHash)
 	}
 }
 
@@ -97,7 +91,7 @@ func TestUpdateExistingSession(t *testing.T) {
 	}
 
 	updated := newTestSession("id-1")
-	updated.Original = "updated-original"
+	updated.PayloadHash = sha256.Sum256([]byte("updated"))
 	updated.Status = pii.SessionStatusReady
 
 	if err := s.Update(ctx, updated); err != nil {
@@ -108,8 +102,8 @@ func TestUpdateExistingSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get returned error: %v", err)
 	}
-	if got.Original != "updated-original" {
-		t.Fatalf("expected updated Original, got %q", got.Original)
+	if got.PayloadHash != sha256.Sum256([]byte("updated")) {
+		t.Fatalf("expected updated PayloadHash, got %x", got.PayloadHash)
 	}
 	if got.Status != pii.SessionStatusReady {
 		t.Fatalf("expected status READY, got %q", got.Status)
@@ -274,7 +268,7 @@ func TestDefensiveCopyOnPut(t *testing.T) {
 	}
 
 	// Mutate the original session and its slices after storing.
-	session.Original = "mutated"
+	session.PayloadHash = sha256.Sum256([]byte("mutated"))
 	session.Mappings[0].Token = "mutated-token"
 	session.Mappings[0].Original = "mutated-original"
 
@@ -282,8 +276,8 @@ func TestDefensiveCopyOnPut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get returned error: %v", err)
 	}
-	if got.Original != "original" {
-		t.Fatalf("stored session was mutated, got Original=%q", got.Original)
+	if got.PayloadHash != sha256.Sum256([]byte("id-1")) {
+		t.Fatalf("stored session was mutated, got PayloadHash=%x", got.PayloadHash)
 	}
 	if got.Mappings[0].Token != "tok1" || got.Mappings[0].Original != "orig1" {
 		t.Fatalf("stored mappings were mutated, got %+v", got.Mappings[0])
@@ -352,7 +346,7 @@ func TestDefensiveCopyOnGet(t *testing.T) {
 	}
 
 	// Mutate the returned session and its slices.
-	got.Original = "mutated"
+	got.PayloadHash = sha256.Sum256([]byte("mutated"))
 	got.Mappings[0].Token = "mutated-token"
 	got.Mappings[0].Original = "mutated-original"
 
@@ -360,8 +354,8 @@ func TestDefensiveCopyOnGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Get returned error: %v", err)
 	}
-	if again.Original != "original" {
-		t.Fatalf("stored session was mutated via Get, got Original=%q", again.Original)
+	if again.PayloadHash != sha256.Sum256([]byte("id-1")) {
+		t.Fatalf("stored session was mutated via Get, got PayloadHash=%x", again.PayloadHash)
 	}
 	if again.Mappings[0].Token != "tok1" || again.Mappings[0].Original != "orig1" {
 		t.Fatalf("stored mappings were mutated via Get, got %+v", again.Mappings[0])

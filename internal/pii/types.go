@@ -66,13 +66,10 @@ const (
 )
 
 type Session struct {
-	PayloadID       string
-	Original        string
-	Masked          string
-	MLMappings      []TokenMapping
-	BackendMappings []TokenMapping
-	Mappings        []TokenMapping
-	Status          SessionStatus
-	CreatedAt       time.Time
-	ExpiresAt       time.Time
+	PayloadID   string
+	PayloadHash [32]byte
+	Mappings    []TokenMapping
+	Status      SessionStatus
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
 }

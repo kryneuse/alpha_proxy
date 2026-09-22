@@ -130,8 +130,6 @@ func isExpired(session pii.Session, now time.Time) bool {
 
 func cloneSession(session pii.Session) pii.Session {
 	clone := session
-	clone.MLMappings = cloneMappings(session.MLMappings)
-	clone.BackendMappings = cloneMappings(session.BackendMappings)
 	clone.Mappings = cloneMappings(session.Mappings)
 	return clone
 }
