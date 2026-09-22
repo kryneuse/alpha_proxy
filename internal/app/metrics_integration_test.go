@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"alpha_proxy/internal/config"
-	"alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/config"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
 )
 
 // resultProcessor returns a fixed successful result.
