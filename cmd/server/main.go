@@ -31,11 +31,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	handler := app.New(cfg, logger, processor)
+	runtime, err := app.NewRuntime(cfg, logger, processor)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "startup error:", err)
+		os.Exit(1)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           handler,
+		Handler:           runtime.Handler,
 		ReadTimeout:       cfg.ReadTimeout,
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		WriteTimeout:      cfg.WriteTimeout,

@@ -83,6 +83,8 @@ type Config struct {
 	// OverloadRetryAfter is the Retry-After used when the concurrency limit is
 	// full.
 	OverloadRetryAfter time.Duration
+	// MetricsEnabled enables the Prometheus metrics endpoint.
+	MetricsEnabled bool
 }
 
 // Load reads configuration from the environment and validates it.
@@ -160,6 +162,11 @@ func Load() (Config, error) {
 		fail(err)
 	} else {
 		cfg.ConsumerRateLimitRPS = v
+	}
+	if v, err := boolEnv("ALPHA_PROXY_METRICS_ENABLED", true); err != nil {
+		fail(err)
+	} else {
+		cfg.MetricsEnabled = v
 	}
 
 	if file := os.Getenv("ALPHA_PROXY_SYSTEMS_FILE"); file != "" {
@@ -386,6 +393,18 @@ func floatEnv(key string, fallback float64) (float64, error) {
 		return 0, &envParseError{key: key, err: err}
 	}
 	return f, nil
+}
+
+func boolEnv(key string, fallback bool) (bool, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return false, &envParseError{key: key, err: err}
+	}
+	return b, nil
 }
 
 // IsEnvParseError reports whether err is an environment parse error.
