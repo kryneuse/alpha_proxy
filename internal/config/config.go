@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"time"
@@ -69,10 +70,19 @@ type Config struct {
 	ProcessorMode     ProcessorMode
 	Systems           []System
 
-	// Rate limit settings are reserved for the separate rate-limiting task and
-	// are not applied to the working path yet.
-	RateLimitPerMin int
-	RateLimitWindow time.Duration
+	// GlobalRateLimitRPS is the global token bucket rate in requests per second.
+	// Zero disables the global limiter.
+	GlobalRateLimitRPS float64
+	// GlobalRateLimitBurst is the global token bucket burst.
+	GlobalRateLimitBurst int
+	// ConsumerRateLimitRPS is the per-consumer token bucket rate. Zero disables
+	// the per-consumer limiter.
+	ConsumerRateLimitRPS float64
+	// ConsumerRateLimitBurst is the per-consumer token bucket burst.
+	ConsumerRateLimitBurst int
+	// OverloadRetryAfter is the Retry-After used when the concurrency limit is
+	// full.
+	OverloadRetryAfter time.Duration
 }
 
 // Load reads configuration from the environment and validates it.
@@ -116,25 +126,40 @@ func Load() (Config, error) {
 	} else {
 		cfg.ProcessingTimeout = v
 	}
-	if v, err := durEnv("ALPHA_PROXY_RATE_LIMIT_WINDOW", time.Minute); err != nil {
+	if v, err := durEnv("ALPHA_PROXY_OVERLOAD_RETRY_AFTER", time.Second); err != nil {
 		fail(err)
 	} else {
-		cfg.RateLimitWindow = v
+		cfg.OverloadRetryAfter = v
 	}
 	if v, err := int64Env("ALPHA_PROXY_BODY_LIMIT", 1<<20); err != nil {
 		fail(err)
 	} else {
 		cfg.BodyLimit = v
 	}
-	if v, err := intEnv("ALPHA_PROXY_PARALLEL_LIMIT", 16); err != nil {
+	if v, err := intEnv("ALPHA_PROXY_PARALLEL_LIMIT", 512); err != nil {
 		fail(err)
 	} else {
 		cfg.ParallelLimit = v
 	}
-	if v, err := intEnv("ALPHA_PROXY_RATE_LIMIT_PER_MIN", 0); err != nil {
+	if v, err := intEnv("ALPHA_PROXY_GLOBAL_RATE_LIMIT_BURST", 2000); err != nil {
 		fail(err)
 	} else {
-		cfg.RateLimitPerMin = v
+		cfg.GlobalRateLimitBurst = v
+	}
+	if v, err := intEnv("ALPHA_PROXY_CONSUMER_RATE_LIMIT_BURST", 0); err != nil {
+		fail(err)
+	} else {
+		cfg.ConsumerRateLimitBurst = v
+	}
+	if v, err := floatEnv("ALPHA_PROXY_GLOBAL_RATE_LIMIT_RPS", 2000); err != nil {
+		fail(err)
+	} else {
+		cfg.GlobalRateLimitRPS = v
+	}
+	if v, err := floatEnv("ALPHA_PROXY_CONSUMER_RATE_LIMIT_RPS", 0); err != nil {
+		fail(err)
+	} else {
+		cfg.ConsumerRateLimitRPS = v
 	}
 
 	if file := os.Getenv("ALPHA_PROXY_SYSTEMS_FILE"); file != "" {
@@ -172,11 +197,14 @@ func (c Config) Validate() error {
 	if c.ParallelLimit <= 0 {
 		return fmt.Errorf("config: parallel limit must be positive")
 	}
-	if c.RateLimitPerMin < 0 {
-		return fmt.Errorf("config: rate limit per minute must not be negative")
+	if c.OverloadRetryAfter <= 0 {
+		return fmt.Errorf("config: overload retry after must be positive")
 	}
-	if c.RateLimitPerMin > 0 && c.RateLimitWindow <= 0 {
-		return fmt.Errorf("config: rate limit window must be positive when rate limit is set")
+	if err := validateRateLimit(c.GlobalRateLimitRPS, c.GlobalRateLimitBurst, "global"); err != nil {
+		return err
+	}
+	if err := validateRateLimit(c.ConsumerRateLimitRPS, c.ConsumerRateLimitBurst, "consumer"); err != nil {
+		return err
 	}
 
 	if err := validateModes(c.RunMode, c.AuthMode, c.ProcessorMode); err != nil {
@@ -189,6 +217,24 @@ func (c Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+// validateRateLimit requires a finite, non-negative RPS and a non-negative
+// burst. When RPS is set, the burst must be strictly positive.
+func validateRateLimit(rps float64, burst int, name string) error {
+	if math.IsNaN(rps) || math.IsInf(rps, 0) {
+		return fmt.Errorf("config: %s rate limit rps must be finite", name)
+	}
+	if rps < 0 {
+		return fmt.Errorf("config: %s rate limit rps must not be negative", name)
+	}
+	if burst < 0 {
+		return fmt.Errorf("config: %s rate limit burst must not be negative", name)
+	}
+	if rps > 0 && burst <= 0 {
+		return fmt.Errorf("config: %s rate limit burst must be positive when rps is set", name)
+	}
 	return nil
 }
 
@@ -328,6 +374,18 @@ func int64Env(key string, fallback int64) (int64, error) {
 		return 0, &envParseError{key: key, err: err}
 	}
 	return n, nil
+}
+
+func floatEnv(key string, fallback float64) (float64, error) {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback, nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return 0, &envParseError{key: key, err: err}
+	}
+	return f, nil
 }
 
 // IsEnvParseError reports whether err is an environment parse error.
