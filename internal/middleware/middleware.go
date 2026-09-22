@@ -1,10 +1,10 @@
-// Package middleware provides HTTP middleware for the contour: safe request
-// logging, panic recovery, a parallel-processing limit, a processing timeout and
-// a body-size limit. It does not implement any data-protection logic.
+// Package middleware provides HTTP middleware for the contour: request ID,
+// structured completion logging, panic recovery, a processing timeout and a
+// body-size limit. It does not implement any data-protection logic.
 //
-// Logging is deliberately minimal: only safe event classes are emitted. No
-// payload, payload_id, headers, API keys, URL paths or Processor error text are
-// ever logged.
+// Logging is deliberately minimal: only safe event classes and fields are
+// emitted. No payload, payload_id, headers, API keys, URL paths, query strings,
+// Processor error text, panic values or stack traces are ever logged.
 package middleware
 
 import (
@@ -12,25 +12,23 @@ import (
 	"net/http"
 	"time"
 
-	"alpha_proxy/internal/observability"
+	"alpha_proxy/internal/requestmeta"
 )
 
-// Logging wraps h and logs only a safe event class and the duration.
-func Logging(log *observability.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Info("request", "dur", time.Since(start).String())
-	})
-}
-
-// Recover wraps h and converts panics into 500 responses. Only the safe event
-// class is logged; the panic value and stack trace are never logged.
-func Recover(log *observability.Logger, next http.Handler) http.Handler {
+// Recover wraps h and converts panics into safe 500 responses. The panic value
+// and stack trace are never logged; the completion logger records status=500 and
+// error_class="panic". If the response has already started, the status and body
+// are left untouched.
+func Recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if recover() != nil {
-				log.Error("panic_recovered")
+				if meta := requestmeta.From(r.Context()); meta != nil {
+					meta.ErrorClass = "panic"
+				}
+				if hw, ok := w.(headerWritten); ok && hw.HeaderWritten() {
+					return
+				}
 				http.Error(w, "internal error", http.StatusInternalServerError)
 			}
 		}()
@@ -39,6 +37,7 @@ func Recover(log *observability.Logger, next http.Handler) http.Handler {
 }
 
 // ParallelLimit wraps h and limits the number of concurrently processed requests.
+// It is not part of the active HTTP path.
 func ParallelLimit(limit int, next http.Handler) http.Handler {
 	sem := make(chan struct{}, limit)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -53,7 +52,9 @@ func ParallelLimit(limit int, next http.Handler) http.Handler {
 	})
 }
 
-// ProcessingTimeout wraps h and bounds the request processing time.
+// ProcessingTimeout wraps h and bounds the request processing time via a
+// context deadline. It does not use http.TimeoutHandler and does not spawn a
+// goroutine.
 func ProcessingTimeout(d time.Duration, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), d)
