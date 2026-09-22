@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
 )
 
 // NewInstrumentedProcessor wraps next so that every Process call is timed and

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"alpha_proxy/internal/observability"
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/observability"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 func TestMetricsSuccessfulRequest(t *testing.T) {

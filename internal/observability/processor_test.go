@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
 )
 
 func TestNewInstrumentedProcessorRejectsNilProcessor(t *testing.T) {

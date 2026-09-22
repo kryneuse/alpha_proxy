@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"net/http"
 
-	"alpha_proxy/internal/api"
-	"alpha_proxy/internal/auth"
-	"alpha_proxy/internal/config"
-	"alpha_proxy/internal/contract"
-	"alpha_proxy/internal/health"
-	"alpha_proxy/internal/middleware"
-	"alpha_proxy/internal/observability"
-	"alpha_proxy/internal/ratelimit"
+	"github.com/kryneuse/alpha_proxy/internal/api"
+	"github.com/kryneuse/alpha_proxy/internal/auth"
+	"github.com/kryneuse/alpha_proxy/internal/config"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/health"
+	"github.com/kryneuse/alpha_proxy/internal/middleware"
+	"github.com/kryneuse/alpha_proxy/internal/observability"
+	"github.com/kryneuse/alpha_proxy/internal/ratelimit"
 )
 
 // Runtime is the fully-wired HTTP contour together with its readiness state.
