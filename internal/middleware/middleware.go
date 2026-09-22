@@ -36,16 +36,18 @@ func Recover(next http.Handler) http.Handler {
 	})
 }
 
-// ParallelLimit wraps h and limits the number of concurrently processed requests.
-// It is not part of the active HTTP path.
-func ParallelLimit(limit int, next http.Handler) http.Handler {
+// ParallelLimit bounds the number of concurrently processed requests with a
+// fixed-capacity semaphore. A slot is acquired without waiting or queueing; when
+// full, the request is rejected immediately with 429. The slot is released via
+// defer on success, error, panic and timeout. No goroutine is spawned.
+func ParallelLimit(limit int, retryAfter time.Duration, next http.Handler) http.Handler {
 	sem := make(chan struct{}, limit)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case sem <- struct{}{}:
 			defer func() { <-sem }()
 		default:
-			http.Error(w, "too many concurrent requests", http.StatusServiceUnavailable)
+			writeTooManyRequests(w, r, retryAfter, "concurrency_limited")
 			return
 		}
 		next.ServeHTTP(w, r)

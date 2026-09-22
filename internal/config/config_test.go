@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,6 +39,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.BodyLimit <= 0 || cfg.ProcessingTimeout <= 0 || cfg.ParallelLimit <= 0 {
 		t.Errorf("limits/timeouts must be positive: %+v", cfg)
+	}
+	if cfg.ParallelLimit != 512 {
+		t.Errorf("ParallelLimit = %d, want default 512", cfg.ParallelLimit)
 	}
 }
 
@@ -112,20 +116,73 @@ func TestValidateDuplicateKeys(t *testing.T) {
 
 func TestValidateRateLimit(t *testing.T) {
 	base := validConfig()
-	base.RateLimitPerMin = -1
+	base.GlobalRateLimitRPS = -1
 	if err := base.Validate(); err == nil {
-		t.Fatal("expected error: negative rate limit")
+		t.Fatal("expected error: negative global rps")
 	}
 
-	base.RateLimitPerMin = 10
-	base.RateLimitWindow = 0
+	base = validConfig()
+	base.GlobalRateLimitRPS = math.NaN()
 	if err := base.Validate(); err == nil {
-		t.Fatal("expected error: rate limit set but window not positive")
+		t.Fatal("expected error: NaN global rps")
 	}
 
-	base.RateLimitWindow = time.Minute
+	base = validConfig()
+	base.GlobalRateLimitRPS = math.Inf(1)
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: Inf global rps")
+	}
+
+	base = validConfig()
+	base.GlobalRateLimitRPS = 10
+	base.GlobalRateLimitBurst = 0
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: rps set but burst not positive")
+	}
+
+	base = validConfig()
+	base.ConsumerRateLimitRPS = 5
+	base.ConsumerRateLimitBurst = 0
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: consumer rps set but burst not positive")
+	}
+
+	base = validConfig()
+	base.GlobalRateLimitBurst = -1
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: negative global burst")
+	}
+
+	base = validConfig()
+	base.ConsumerRateLimitRPS = 0
+	base.ConsumerRateLimitBurst = -1
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: negative consumer burst at rps=0")
+	}
+
+	base = validConfig()
+	base.GlobalRateLimitRPS = 2000
+	base.GlobalRateLimitBurst = 2000
 	if err := base.Validate(); err != nil {
 		t.Fatalf("valid rate limit rejected: %v", err)
+	}
+}
+
+func TestLoadInvalidFloatEnv(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("ALPHA_PROXY_GLOBAL_RATE_LIMIT_RPS", "not-a-float")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for invalid float")
+	}
+	if !IsEnvParseError(err) {
+		t.Fatalf("expected env parse error, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "ALPHA_PROXY_GLOBAL_RATE_LIMIT_RPS") {
+		t.Errorf("error must name the parameter, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "not-a-float") {
+		t.Errorf("error must not include the value, got: %v", err)
 	}
 }
 
@@ -243,18 +300,23 @@ func TestLoadSystemsFromFile(t *testing.T) {
 
 func validConfig() Config {
 	return Config{
-		Addr:              ":8080",
-		ReadTimeout:       10 * time.Second,
-		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		BodyLimit:         1 << 20,
-		ProcessingTimeout: 5 * time.Second,
-		ParallelLimit:     16,
-		RunMode:           RunModeFinal,
-		AuthMode:          AuthModeAPIKey,
-		ProcessorMode:     ProcessorReal,
-		Systems:           []System{{ID: "sys-a", Enabled: true, APIKey: "secret-a"}},
+		Addr:                   ":8080",
+		ReadTimeout:            10 * time.Second,
+		ReadHeaderTimeout:      5 * time.Second,
+		WriteTimeout:           10 * time.Second,
+		IdleTimeout:            60 * time.Second,
+		BodyLimit:              1 << 20,
+		ProcessingTimeout:      5 * time.Second,
+		ParallelLimit:          16,
+		OverloadRetryAfter:     time.Second,
+		GlobalRateLimitRPS:     2000,
+		GlobalRateLimitBurst:   2000,
+		ConsumerRateLimitRPS:   0,
+		ConsumerRateLimitBurst: 0,
+		RunMode:                RunModeFinal,
+		AuthMode:               AuthModeAPIKey,
+		ProcessorMode:          ProcessorReal,
+		Systems:                []System{{ID: "sys-a", Enabled: true, APIKey: "secret-a"}},
 	}
 }
 
@@ -269,11 +331,14 @@ func clearEnv(t *testing.T) {
 		"ALPHA_PROXY_BODY_LIMIT",
 		"ALPHA_PROXY_PROCESSING_TIMEOUT",
 		"ALPHA_PROXY_PARALLEL_LIMIT",
+		"ALPHA_PROXY_OVERLOAD_RETRY_AFTER",
+		"ALPHA_PROXY_GLOBAL_RATE_LIMIT_RPS",
+		"ALPHA_PROXY_GLOBAL_RATE_LIMIT_BURST",
+		"ALPHA_PROXY_CONSUMER_RATE_LIMIT_RPS",
+		"ALPHA_PROXY_CONSUMER_RATE_LIMIT_BURST",
 		"ALPHA_PROXY_RUN_MODE",
 		"ALPHA_PROXY_AUTH_MODE",
 		"ALPHA_PROXY_PROCESSOR_MODE",
-		"ALPHA_PROXY_RATE_LIMIT_PER_MIN",
-		"ALPHA_PROXY_RATE_LIMIT_WINDOW",
 		"ALPHA_PROXY_SYSTEMS_FILE",
 	} {
 		t.Setenv(k, "")
