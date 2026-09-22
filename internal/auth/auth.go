@@ -14,8 +14,8 @@ import (
 	"encoding/hex"
 	"net/http"
 
-	"alpha_proxy/internal/config"
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/config"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 type ctxKey struct{}

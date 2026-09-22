@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 type requestIDKey struct{}

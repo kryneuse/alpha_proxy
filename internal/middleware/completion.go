@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"alpha_proxy/internal/observability"
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/observability"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 // headerWritten is implemented by the status recorder.

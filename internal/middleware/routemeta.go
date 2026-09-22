@@ -3,7 +3,7 @@ package middleware
 import (
 	"net/http"
 
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 // RouteMetadata records a known route pattern in the request-scoped logging

@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"time"
 
-	"alpha_proxy/internal/requestmeta"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 // Recover wraps h and converts panics into safe 500 responses. The panic value
