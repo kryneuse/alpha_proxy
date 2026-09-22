@@ -3,7 +3,14 @@
 // or state-machine logic so that both sides can depend on it without coupling.
 package contract
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrUnavailable reports that the Processor is temporarily unavailable. The
+// HTTP layer maps it to 503. Processors may wrap it with %w.
+var ErrUnavailable = errors.New("processor unavailable")
 
 // ProcessRequest is the input handed from the HTTP layer to a Processor.
 type ProcessRequest struct {
