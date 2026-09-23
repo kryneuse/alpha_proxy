@@ -11,3 +11,4 @@ loadtest/results/
 .env
 .env.*
 !.env.example
+*.tar

@@ -9,21 +9,7 @@ __pycache__/
 venv/
 
 # Models (large binaries, downloaded/exported)
-models/*.onnx
-models/*.onnx.data
-models/*/model.safetensors
-models/*/tokenizer.json
-models/*/config.json
-models/*/tokenizer_config.json
-models/*/README.md
-models/*/LICENSE
-models/*/.gitattributes
-models/*/.cache/
-models/*/*.png
-models/*/training_args.bin
-models/*/training_info.json
-
-# Keep the manifest and the author's reference script
+models/*
 !models/manifest.json
 !models/*/llaim_ner.py
 
