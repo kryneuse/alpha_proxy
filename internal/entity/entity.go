@@ -32,10 +32,10 @@ const (
 	DISTRICT Type = "DISTRICT"
 	// Адресные компоненты, которые NER v14a выдаёт отдельно от ADDRESS.
 	// Сохраняются до построения плана замен, чтобы не терять покрытие.
-	CITY       Type = "CITY"
-	STREET     Type = "STREET"
-	HOUSE      Type = "HOUSE"
-	APARTMENT  Type = "APARTMENT"
+	CITY        Type = "CITY"
+	STREET      Type = "STREET"
+	HOUSE       Type = "HOUSE"
+	APARTMENT   Type = "APARTMENT"
 	POSTAL_CODE Type = "POSTAL_CODE"
 )
 

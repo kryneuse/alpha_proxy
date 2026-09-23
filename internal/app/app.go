@@ -32,6 +32,12 @@ type Runtime struct {
 // metrics) are registered method-aware and bypass auth, rate limiting, the
 // concurrency semaphore, the processing timeout and the body limit.
 func NewRuntime(cfg config.Config, log *observability.Logger, processor contract.Processor) (*Runtime, error) {
+	return NewRuntimeWithMetrics(cfg, log, processor, nil)
+}
+
+// NewRuntimeWithMetrics is NewRuntime with an optional shared Metrics instance.
+// When metrics is nil it creates its own instance if metrics are enabled.
+func NewRuntimeWithMetrics(cfg config.Config, log *observability.Logger, processor contract.Processor, metrics *observability.Metrics) (*Runtime, error) {
 	if log == nil {
 		return nil, fmt.Errorf("app: logger must not be nil")
 	}
@@ -41,13 +47,15 @@ func NewRuntime(cfg config.Config, log *observability.Logger, processor contract
 
 	readiness := health.NewReadiness()
 
-	var metrics *observability.Metrics
 	if cfg.MetricsEnabled {
-		var err error
-		metrics, err = observability.NewMetrics()
-		if err != nil {
-			return nil, fmt.Errorf("app: create metrics: %w", err)
+		if metrics == nil {
+			var err error
+			metrics, err = observability.NewMetrics()
+			if err != nil {
+				return nil, fmt.Errorf("app: create metrics: %w", err)
+			}
 		}
+		var err error
 		processor, err = observability.NewInstrumentedProcessor(processor, metrics)
 		if err != nil {
 			return nil, fmt.Errorf("app: instrument processor: %w", err)

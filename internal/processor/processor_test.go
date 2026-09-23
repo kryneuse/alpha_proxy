@@ -15,14 +15,16 @@ import (
 )
 
 type fakeMasker struct {
-	masked   string
-	mappings []pii.TokenMapping
-	err      error
-	calls    int
+	masked     string
+	mappings   []pii.TokenMapping
+	err        error
+	calls      int
+	lastPolicy pii.Policy
 }
 
-func (f *fakeMasker) Mask(_ context.Context, _ string, _ pii.Policy) (string, []pii.TokenMapping, error) {
+func (f *fakeMasker) Mask(_ context.Context, _ string, pol pii.Policy) (string, []pii.TokenMapping, error) {
 	f.calls++
+	f.lastPolicy = pol
 	return f.masked, f.mappings, f.err
 }
 
@@ -565,5 +567,313 @@ func TestProcessConcurrentFirstRequests(t *testing.T) {
 	}
 	if sess.Status != pii.SessionStatusReady {
 		t.Fatalf("expected READY, got %q", sess.Status)
+	}
+}
+
+func TestProcessMaskKindsOverridesPolicy(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked"}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	_, err := p.Process(context.Background(), contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"phone"},
+		MaskKindsSet: true,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected 1 masker call, got %d", m.calls)
+	}
+	if !m.lastPolicy.AllowedKinds[pii.PIIKindPhone] {
+		t.Fatalf("expected phone allowed, got %+v", m.lastPolicy.AllowedKinds)
+	}
+	if m.lastPolicy.AllowedKinds[pii.PIIKindINN] {
+		t.Fatalf("expected inn not allowed, got %+v", m.lastPolicy.AllowedKinds)
+	}
+}
+
+func TestProcessMaskKindsUnknown(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked"}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	_, err := p.Process(context.Background(), contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"unknown"},
+		MaskKindsSet: true,
+	})
+	if err == nil {
+		t.Fatal("expected error for unknown mask kind")
+	}
+	if !errors.Is(err, pii.ErrInvalidMaskKind) {
+		t.Fatalf("expected ErrInvalidMaskKind, got %v", err)
+	}
+	if m.calls != 0 {
+		t.Fatalf("expected 0 masker calls, got %d", m.calls)
+	}
+}
+
+func TestProcessMaskKindsNotSetUsesConsumerPolicy(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked"}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	_, err := p.Process(context.Background(), contract.ProcessRequest{
+		Payload:    "call 79123456789",
+		PayloadID:  "id-1",
+		ConsumerID: "consumer-1",
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected 1 masker call, got %d", m.calls)
+	}
+	if !m.lastPolicy.AllowedKinds[pii.PIIKindPhone] {
+		t.Fatalf("expected phone allowed, got %+v", m.lastPolicy.AllowedKinds)
+	}
+	if len(m.lastPolicy.AllowedKinds) != 1 {
+		t.Fatalf("expected exactly one allowed kind, got %+v", m.lastPolicy.AllowedKinds)
+	}
+}
+
+func TestProcessMaskKindsEmptyNarrowsToNothing(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked"}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	_, err := p.Process(context.Background(), contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{},
+		MaskKindsSet: true,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected 1 masker call, got %d", m.calls)
+	}
+	if len(m.lastPolicy.AllowedKinds) != 0 {
+		t.Fatalf("expected empty AllowedKinds, got %+v", m.lastPolicy.AllowedKinds)
+	}
+}
+
+func TestProcessMaskKindsDuplicates(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked"}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	_, err := p.Process(context.Background(), contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"phone", "phone"},
+		MaskKindsSet: true,
+	})
+	if err != nil {
+		t.Fatalf("Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected 1 masker call, got %d", m.calls)
+	}
+	if len(m.lastPolicy.AllowedKinds) != 1 || !m.lastPolicy.AllowedKinds[pii.PIIKindPhone] {
+		t.Fatalf("expected only phone allowed, got %+v", m.lastPolicy.AllowedKinds)
+	}
+}
+
+func TestProcessMaskKindsForbiddenByPolicy(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked"}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	_, err := p.Process(context.Background(), contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"email"},
+		MaskKindsSet: true,
+	})
+	if err == nil {
+		t.Fatal("expected error for forbidden mask kind")
+	}
+	if !errors.Is(err, pii.ErrPolicyRejected) {
+		t.Fatalf("expected ErrPolicyRejected, got %v", err)
+	}
+	if m.calls != 0 {
+		t.Fatalf("expected 0 masker calls, got %d", m.calls)
+	}
+}
+
+func TestProcessMaskKindsRetryCanonical(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked <PHONE_1>", mappings: []pii.TokenMapping{
+		{Token: "<PHONE_1>", Original: "79123456789", Kind: pii.PIIKindPhone, Source: pii.SourceReg, Start: 5, End: 16},
+	}}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	first := contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"phone", "phone"},
+		MaskKindsSet: true,
+	}
+	if _, err := p.Process(context.Background(), first); err != nil {
+		t.Fatalf("first Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected 1 masker call after first, got %d", m.calls)
+	}
+
+	// Same selection in a different order and with duplicates is a retry.
+	retry := contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"phone"},
+		MaskKindsSet: true,
+	}
+	resp, err := p.Process(context.Background(), retry)
+	if err != nil {
+		t.Fatalf("retry Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected masker not called on retry, got %d", m.calls)
+	}
+	if resp.Result != "call <PHONE_1>" {
+		t.Fatalf("unexpected result: %q", resp.Result)
+	}
+}
+
+func TestProcessMaskKindsRetryConflict(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked <PHONE_1>", mappings: []pii.TokenMapping{
+		{Token: "<PHONE_1>", Original: "79123456789", Kind: pii.PIIKindPhone, Source: pii.SourceReg, Start: 6, End: 17},
+	}}
+	st := store.NewMemoryStore(100)
+	pol := testPolicy()
+	pol.AllowedKinds = map[pii.PIIKind]bool{pii.PIIKindPhone: true, pii.PIIKindEmail: true}
+	pp := policy.NewStaticProvider(map[string]pii.Policy{"consumer-1": pol})
+	p, err := New(st, pp, m, time.Hour)
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	p.now = func() time.Time { return now }
+
+	first := contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"phone"},
+		MaskKindsSet: true,
+	}
+	if _, err := p.Process(context.Background(), first); err != nil {
+		t.Fatalf("first Process returned error: %v", err)
+	}
+
+	// Different selection at the same payload and payload_id is a conflict.
+	other := contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"email"},
+		MaskKindsSet: true,
+	}
+	_, err = p.Process(context.Background(), other)
+	if !errors.Is(err, pii.ErrPayloadIDConflict) {
+		t.Fatalf("expected ErrPayloadIDConflict, got %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected masker called once, got %d", m.calls)
+	}
+}
+
+func TestProcessMaskKindsAbsentVsEmptyConflict(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "masked <PHONE_1>", mappings: []pii.TokenMapping{
+		{Token: "<PHONE_1>", Original: "79123456789", Kind: pii.PIIKindPhone, Source: pii.SourceReg, Start: 6, End: 17},
+	}}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	// Explicit empty array.
+	empty := contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{},
+		MaskKindsSet: true,
+	}
+	if _, err := p.Process(context.Background(), empty); err != nil {
+		t.Fatalf("first Process returned error: %v", err)
+	}
+
+	// Absent field is a different setting.
+	absent := contract.ProcessRequest{
+		Payload:    "call 79123456789",
+		PayloadID:  "id-1",
+		ConsumerID: "consumer-1",
+	}
+	_, err := p.Process(context.Background(), absent)
+	if !errors.Is(err, pii.ErrPayloadIDConflict) {
+		t.Fatalf("expected ErrPayloadIDConflict, got %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected masker called once, got %d", m.calls)
+	}
+}
+
+func TestProcessMaskKindsDetokenizeWithoutKinds(t *testing.T) {
+	now := time.Now()
+	m := &fakeMasker{masked: "call <PHONE_1>", mappings: []pii.TokenMapping{
+		{Token: "<PHONE_1>", Original: "79123456789", Kind: pii.PIIKindPhone, Source: pii.SourceReg, Start: 5, End: 16},
+	}}
+	p, _ := newTestProcessor(t, m, time.Hour)
+	p.now = func() time.Time { return now }
+
+	mask := contract.ProcessRequest{
+		Payload:      "call 79123456789",
+		PayloadID:    "id-1",
+		ConsumerID:   "consumer-1",
+		MaskKinds:    []string{"phone"},
+		MaskKindsSet: true,
+	}
+	if _, err := p.Process(context.Background(), mask); err != nil {
+		t.Fatalf("mask Process returned error: %v", err)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected 1 masker call, got %d", m.calls)
+	}
+
+	// Detokenization must work without re-passing mask_kinds.
+	detok := contract.ProcessRequest{
+		Payload:    "call <PHONE_1>",
+		PayloadID:  "id-1",
+		ConsumerID: "consumer-1",
+	}
+	resp, err := p.Process(context.Background(), detok)
+	if err != nil {
+		t.Fatalf("detokenize Process returned error: %v", err)
+	}
+	if resp.Result != "call 79123456789" {
+		t.Fatalf("unexpected detokenized result: %q", resp.Result)
+	}
+	if m.calls != 1 {
+		t.Fatalf("expected masker not called on detokenize, got %d", m.calls)
 	}
 }

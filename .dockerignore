@@ -1,0 +1,57 @@
+# Version control
+.git
+.github
+.gitlab
+.kilo
+.idea
+.vscode
+
+# Python ML service (separate image)
+ml-service
+
+# Load tests
+loadtest
+
+# Documentation
+docs
+
+# Python cache and virtualenv
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Test and build artifacts
+*.test
+*.out
+coverage.*
+dist/
+bin/
+
+# Logs
+*.log
+logs/
+
+# Local binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Model files
+*.onnx
+*.safetensors
+
+# Keep Go sources and module files
+!go.mod
+!go.sum
+!cmd/
+!internal/
+!gen/
+!api/
+
+# Local adaptive runtime and credentials
+.runtime/
+.venv*/
+.env
+.env.*

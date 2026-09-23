@@ -3,7 +3,10 @@
 // which is what the Processor receives.
 package requestmeta
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+)
 
 type ctxKey struct{}
 
@@ -17,6 +20,27 @@ type Meta struct {
 	Route string
 	// ErrorClass is a safe error classification, e.g. "panic".
 	ErrorClass string
+
+	// Operation is the masking operation performed, e.g. "mask" or "detokenize".
+	// It is populated by the observability layer and never contains raw data.
+	Operation string
+	// PIICount is the number of PII entities found for the request.
+	PIICount int
+	// PIITypes is the set of PII type names found, without any original values.
+	PIITypes []string
+	// mlInvoked reports whether the ML service was called for the request. It is
+	// set from parallel chunk goroutines, so it is an atomic flag.
+	mlInvoked atomic.Bool
+}
+
+// SetMLInvoked marks that the ML service was invoked for this request.
+func (m *Meta) SetMLInvoked() {
+	m.mlInvoked.Store(true)
+}
+
+// MLInvoked reports whether the ML service was invoked for this request.
+func (m *Meta) MLInvoked() bool {
+	return m.mlInvoked.Load()
 }
 
 // With returns a context carrying m.

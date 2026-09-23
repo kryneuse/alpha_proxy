@@ -137,6 +137,7 @@ func isExpired(session pii.Session, now time.Time) bool {
 func cloneSession(session pii.Session) pii.Session {
 	clone := session
 	clone.Mappings = cloneMappings(session.Mappings)
+	clone.MaskKinds = cloneMaskKinds(session.MaskKinds)
 	return clone
 }
 
@@ -146,5 +147,14 @@ func cloneMappings(mappings []pii.TokenMapping) []pii.TokenMapping {
 	}
 	clone := make([]pii.TokenMapping, len(mappings))
 	copy(clone, mappings)
+	return clone
+}
+
+func cloneMaskKinds(kinds []pii.PIIKind) []pii.PIIKind {
+	if kinds == nil {
+		return nil
+	}
+	clone := make([]pii.PIIKind, len(kinds))
+	copy(clone, kinds)
 	return clone
 }

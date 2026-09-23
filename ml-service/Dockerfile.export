@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+
+# Developer-only image with tools for downloading and exporting models.
+# Not part of compose.yaml, not deployed to the server, contains no models
+# and no secrets. Scripts and models are bind-mounted into /workspace at run time.
+FROM python:3.11-slim-bookworm
+
+# Install only the system packages required by onnxruntime.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HF_HOME=/hf-cache
+
+# CPU-only PyTorch from the official CPU index.
+RUN python -m pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.8.0
+
+# Exact versions of the remaining export/runtime dependencies from PyPI.
+RUN python -m pip install --no-cache-dir \
+    onnx==1.19.1 \
+    onnxruntime==1.19.2 \
+    transformers==4.57.6 \
+    tokenizers==0.22.2 \
+    numpy==2.0.2 \
+    huggingface-hub==0.36.2 \
+    protobuf==6.33.6
+
+WORKDIR /workspace
+
+# Safe default command; scripts and models are bind-mounted at run time.
+CMD ["python", "--version"]

@@ -70,7 +70,9 @@ func TestRequestIDGeneratedFormat(t *testing.T) {
 			t.Errorf("generated ID length = %d, want 32", len(id))
 		}
 		for _, c := range id {
-			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			isDigit := c >= '0' && c <= '9'
+			isLowerHex := c >= 'a' && c <= 'f'
+			if !isDigit && !isLowerHex {
 				t.Errorf("generated ID contains non-hex char %q", c)
 			}
 		}
@@ -231,6 +233,82 @@ func TestCompletionLogIsValidJSONWithAllowedFields(t *testing.T) {
 	}
 	if got, _ := m["request_id"].(string); got == "" {
 		t.Errorf("request_id missing: %v", m["request_id"])
+	}
+}
+
+func TestCompletionLogIncludesMaskingFields(t *testing.T) {
+	var buf bytes.Buffer
+	log := observability.NewLoggerTo(&buf)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if meta := requestmeta.From(r.Context()); meta != nil {
+			meta.Operation = "mask"
+			meta.PIICount = 2
+			meta.PIITypes = []string{"phone", "email"}
+			meta.SetMLInvoked()
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := CompletionLogger(log, RequestIDMiddleware(inner))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/process", nil)
+	handler.ServeHTTP(rec, req)
+
+	var m map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+		t.Fatalf("log is not valid JSON: %v (%q)", err, buf.String())
+	}
+	if m["operation"] != "mask" {
+		t.Errorf("operation = %v, want mask", m["operation"])
+	}
+	if m["pii_count"] != float64(2) {
+		t.Errorf("pii_count = %v, want 2", m["pii_count"])
+	}
+	if m["ml_invoked"] != true {
+		t.Errorf("ml_invoked = %v, want true", m["ml_invoked"])
+	}
+	types, ok := m["pii_types"].([]any)
+	if !ok || len(types) != 2 {
+		t.Fatalf("pii_types = %v, want [phone email]", m["pii_types"])
+	}
+	if types[0] != "phone" || types[1] != "email" {
+		t.Errorf("pii_types = %v, want [phone email]", types)
+	}
+}
+
+func TestCompletionLogMaskingFieldsDoNotLeakValues(t *testing.T) {
+	var buf bytes.Buffer
+	log := observability.NewLoggerTo(&buf)
+
+	const (
+		payload   = "super-secret-payload"
+		payloadID = "super-secret-id"
+		apiKey    = "super-secret-api-key"
+	)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if meta := requestmeta.From(r.Context()); meta != nil {
+			meta.Operation = "mask"
+			meta.PIICount = 1
+			meta.PIITypes = []string{"phone"}
+			meta.SetMLInvoked()
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := CompletionLogger(log, RequestIDMiddleware(inner))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(
+		fmt.Sprintf(`{"payload":%q,"payload_id":%q}`, payload, payloadID)))
+	req.Header.Set("X-API-Key", apiKey)
+	handler.ServeHTTP(rec, req)
+
+	out := buf.String()
+	for _, leak := range []string{payload, payloadID, apiKey} {
+		if strings.Contains(out, leak) {
+			t.Errorf("completion log leaked %q: %q", leak, out)
+		}
 	}
 }
 

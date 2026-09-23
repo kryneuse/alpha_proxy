@@ -1,0 +1,9 @@
+[Unit]
+Description=Forward alpha4 port to Mac reverse SSH tunnel
+Requires=alpha-proxy-mac.socket
+After=alpha-proxy-mac.socket
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:18081
+DynamicUser=yes
+NoNewPrivileges=yes

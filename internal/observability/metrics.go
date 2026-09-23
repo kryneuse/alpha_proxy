@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/kryneuse/alpha_proxy/internal/pii"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -28,6 +29,11 @@ type Metrics struct {
 	httpTimeoutsTotal        prometheus.Counter
 	processorCallsTotal      *prometheus.CounterVec
 	processorDurationSeconds *prometheus.HistogramVec
+
+	piiEntitiesTotal   *prometheus.CounterVec
+	mlRequestsTotal    *prometheus.CounterVec
+	mlRequestDuration  *prometheus.HistogramVec
+	cascadeRoutesTotal *prometheus.CounterVec
 }
 
 // NewMetrics creates a Metrics instance with its own registry and registers the
@@ -61,6 +67,23 @@ func NewMetrics() (*Metrics, error) {
 			Help:    "Duration of Processor calls in seconds by outcome.",
 			Buckets: httpDurationBuckets(),
 		}, []string{"outcome"}),
+		piiEntitiesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "alpha_proxy_pii_entities_total",
+			Help: "Total number of PII entities found by kind.",
+		}, []string{"kind"}),
+		mlRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "alpha_proxy_ml_requests_total",
+			Help: "Total number of ML requests by outcome.",
+		}, []string{"outcome"}),
+		mlRequestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "alpha_proxy_ml_request_duration_seconds",
+			Help:    "Duration of ML requests in seconds by outcome.",
+			Buckets: httpDurationBuckets(),
+		}, []string{"outcome"}),
+		cascadeRoutesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "alpha_proxy_cascade_routes_total",
+			Help: "Total number of cascade routing decisions by route.",
+		}, []string{"route"}),
 	}
 
 	collectors := []prometheus.Collector{
@@ -70,6 +93,10 @@ func NewMetrics() (*Metrics, error) {
 		m.httpTimeoutsTotal,
 		m.processorCallsTotal,
 		m.processorDurationSeconds,
+		m.piiEntitiesTotal,
+		m.mlRequestsTotal,
+		m.mlRequestDuration,
+		m.cascadeRoutesTotal,
 	}
 	for _, c := range collectors {
 		if err := m.registry.Register(c); err != nil {
@@ -109,6 +136,25 @@ func (m *Metrics) ObserveProcessor(outcome string, duration time.Duration) {
 	outcome = normalizeOutcome(outcome)
 	m.processorCallsTotal.WithLabelValues(outcome).Inc()
 	m.processorDurationSeconds.WithLabelValues(outcome).Observe(duration.Seconds())
+}
+
+// ObservePIIEntity records one found PII entity of the given kind. The kind is
+// normalized to a safe label; unknown kinds fall back to "unknown".
+func (m *Metrics) ObservePIIEntity(kind string) {
+	m.piiEntitiesTotal.WithLabelValues(normalizeKind(kind)).Inc()
+}
+
+// ObserveMLRequest records an ML request with a normalized outcome and duration.
+func (m *Metrics) ObserveMLRequest(outcome string, duration time.Duration) {
+	outcome = normalizeMLOutcome(outcome)
+	m.mlRequestsTotal.WithLabelValues(outcome).Inc()
+	m.mlRequestDuration.WithLabelValues(outcome).Observe(duration.Seconds())
+}
+
+// ObserveCascadeRoute records a cascade routing decision. The route is
+// normalized to one of "safe", "rule" or "ml".
+func (m *Metrics) ObserveCascadeRoute(route string) {
+	m.cascadeRoutesTotal.WithLabelValues(normalizeCascadeRoute(route)).Inc()
 }
 
 // Handler returns an HTTP handler serving the metrics in Prometheus exposition
@@ -153,5 +199,44 @@ func normalizeOutcome(outcome string) string {
 		return outcome
 	default:
 		return "error"
+	}
+}
+
+// normalizeMLOutcome maps an ML request outcome to a safe label. Only "success"
+// and "error" are allowed.
+func normalizeMLOutcome(outcome string) string {
+	if outcome == "success" {
+		return "success"
+	}
+	return "error"
+}
+
+// normalizeKind maps a PII kind to a safe label. Only known PIIKind string
+// values are allowed; anything else falls back to "unknown" so no raw value
+// ever becomes a metric label.
+func normalizeKind(kind string) string {
+	switch pii.PIIKind(kind) {
+	case pii.PIIKindFullName, pii.PIIKindFirstName, pii.PIIKindLastName,
+		pii.PIIKindMiddleName, pii.PIIKindAddress, pii.PIIKindCity,
+		pii.PIIKindStreet, pii.PIIKindHouse, pii.PIIKindApartment,
+		pii.PIIKindBirthPlace, pii.PIIKindCitizenship, pii.PIIKindPassportIssuer,
+		pii.PIIKindCardHolderName, pii.PIIKindEmail, pii.PIIKindPhone,
+		pii.PIIKindINN, pii.PIIKindBankCard, pii.PIIKindPassport,
+		pii.PIIKindPassportDivision, pii.PIIKindDate, pii.PIIKindDriverLicense,
+		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode:
+		return kind
+	default:
+		return "unknown"
+	}
+}
+
+// normalizeCascadeRoute maps a cascade routing decision to one of "safe",
+// "rule" or "ml". Unknown values fall back to "safe".
+func normalizeCascadeRoute(route string) string {
+	switch route {
+	case "safe", "rule", "ml":
+		return route
+	default:
+		return "safe"
 	}
 }

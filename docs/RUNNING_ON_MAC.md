@@ -1,3 +1,5 @@
+> Current testing deployment: `scripts/run_local_adaptive.py --auth-mode verify`. Authentication is disabled; inference remains real. The default launcher mode still requires an API key. Measurements below describe the earlier authenticated run.
+
 # Запущенная версия на этом Mac
 
 Дата: 23 сентября 2026. Сервис оставлен запущенным в фоне.
@@ -10,7 +12,6 @@
 - ML metrics: `http://127.0.0.1:9091/metrics`–`9096/metrics`; `/stats` возвращает JSON.
 - Компьютер: Mac16,7, 14 CPU-ядер, 48 GiB RAM. Используется CPU; GPU-экспорт не выполнялся.
 - Отдельное окружение: `.venv-adaptive` (Python3.12.13). Runtime-зависимости перенесены из проверенного окружения на этом же Mac; инвентарь в `.venv-adaptive/requirements.installed.txt`, provenance рядом. Установка пакетов из сети не была условием запуска.
-- API-key авторизация включена; ключ находится только в `.runtime/adaptive/systems.json` (0600).
 
 ## Проверить маскирование и демаскирование
 
@@ -37,13 +38,13 @@ Mappings хранятся в памяти Go 15 минут; после пере�
 
 ```bash
 # Запустить в переднем плане; Ctrl-C корректно завершает собственные процессы.
-.venv-adaptive/bin/python scripts/run_local_adaptive.py
+.venv-adaptive/bin/python scripts/run_local_adaptive.py --auth-mode verify
 ```
 
 Для фонового запуска после остановки:
 
 ```bash
-nohup .venv-adaptive/bin/python -u scripts/run_local_adaptive.py > .runtime/adaptive/supervisor.log 2>&1 &
+nohup .venv-adaptive/bin/python -u scripts/run_local_adaptive.py --auth-mode verify > .runtime/adaptive/supervisor.log 2>&1 &
 ```
 
 PID супервизора и дочерних процессов записаны в `.runtime/adaptive/run.json`; PID супервизора также находится в `.runtime/adaptive/supervisor.pid`. Для остановки отправьте SIGTERM именно этому супервизору. Логи: `.runtime/adaptive/http.log`, `ml-0.log`–`ml-5.log`, `supervisor.log`.

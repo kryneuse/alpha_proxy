@@ -53,6 +53,17 @@ type System struct {
 	ID      string `json:"id"`
 	Enabled bool   `json:"enabled"`
 	APIKey  string `json:"api_key"`
+	// MaskKinds optionally restricts the PII kinds this system may mask. A nil
+	// pointer means the field is absent and, for backward compatibility, all
+	// known kinds are allowed. A non-nil pointer to an empty slice means the
+	// system masks nothing. A non-nil pointer to a non-empty slice restricts
+	// masking to exactly those kinds.
+	MaskKinds *[]string `json:"mask_kinds,omitempty"`
+	// DetokenizationAllowed optionally controls whether this system may
+	// detokenize. A nil pointer means the field is absent and, for backward
+	// compatibility, detokenization is allowed. A non-nil pointer overrides the
+	// default.
+	DetokenizationAllowed *bool `json:"detokenization_allowed,omitempty"`
 }
 
 // Config holds all settings needed to run the HTTP contour.
@@ -335,6 +346,7 @@ func validateSystems(systems []System) error {
 }
 
 func loadSystems(path string) ([]System, error) {
+	//nolint:gosec // G304: the path is supplied by the trusted service operator configuration.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("config: read systems file: %w", err)

@@ -1,3 +1,5 @@
+> Current runtime: Python 3.12, adaptive gate1-v3 + v14a / spaCy. See the [service README](../README.md) for full installation and startup.
+
 > Новый режим: **adaptive = gate1-v3 + v14a при свободном quality-пуле, spaCy sm при нагрузке**. Несколько CPU-реплик, запуск на Mac, маскирование/демаскирование и метрики описаны в [ADAPTIVE.md](../docs/ADAPTIVE.md). Исторические инструкции ниже могут описывать только прежний quality-путь.
 
 # ML PII Detection Service

@@ -28,21 +28,6 @@ func (f *fakeClient) ProcessBatchV2(_ context.Context, req BatchRequest) (BatchR
 	return f.ProcessBatch(context.Background(), req)
 }
 
-func (f *fakeClient) requestCount() int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return len(f.reqs)
-}
-
-func (f *fakeClient) lastRequest() BatchRequest {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.reqs) == 0 {
-		return BatchRequest{}
-	}
-	return f.reqs[len(f.reqs)-1]
-}
-
 // recordingClient записывает запросы и строит ответ через respFn.
 type recordingClient struct {
 	mu     sync.Mutex

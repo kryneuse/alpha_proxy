@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 // NewInstrumentedProcessor wraps next so that every Process call is timed and
@@ -47,6 +48,10 @@ type instrumentedProcessor struct {
 func (o *instrumentedProcessor) Process(ctx context.Context, req contract.ProcessRequest) (resp contract.ProcessResponse, err error) {
 	start := o.now()
 	outcome := "error"
+
+	if meta := requestmeta.From(ctx); meta != nil {
+		meta.Operation = "process"
+	}
 
 	defer func() {
 		o.metrics.ObserveProcessor(outcome, o.now().Sub(start))

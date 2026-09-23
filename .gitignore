@@ -1,22 +1,21 @@
-# Python virtual environments
-.venv/
+# Local environments and caches
+.venv*/
 venv/
 __pycache__/
 *.py[cod]
-
-# Load test results
-loadtest/results/
-# Local adaptive service: binaries, generated API keys and process logs
-.runtime/
-
-.venv-adaptive/
-:memory:.ses
-
-# Local environments, credentials and model artifacts
-.venv*/
+.pytest_cache/
 .kilo/
+.DS_Store
+
+# Runtime state, logs, credentials and load-test output
+.runtime/
+loadtest/results/
 .env
 .env.*
 !.env.example
+*.tar
+:memory:.ses
+
+# Model weights and tokenizers are supplied separately
 /ml-service/models/*
 !/ml-service/models/manifest.json

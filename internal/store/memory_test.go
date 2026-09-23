@@ -361,3 +361,60 @@ func TestDefensiveCopyOnGet(t *testing.T) {
 		t.Fatalf("stored mappings were mutated via Get, got %+v", again.Mappings[0])
 	}
 }
+
+func TestDefensiveCopyMaskKindsOnPut(t *testing.T) {
+	s := NewMemoryStore(10)
+	ctx := context.Background()
+
+	session := newTestSession("id-1")
+	session.MaskKindsSet = true
+	session.MaskKinds = []pii.PIIKind{pii.PIIKindPhone, pii.PIIKindEmail}
+	if _, err := s.PutIfAbsent(ctx, session); err != nil {
+		t.Fatalf("PutIfAbsent returned error: %v", err)
+	}
+
+	// Mutate the original session's MaskKinds after storing.
+	session.MaskKinds[0] = pii.PIIKindINN
+
+	got, err := s.Get(ctx, "id-1")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	if !got.MaskKindsSet {
+		t.Fatal("expected MaskKindsSet to be true")
+	}
+	if len(got.MaskKinds) != 2 || got.MaskKinds[0] != pii.PIIKindPhone || got.MaskKinds[1] != pii.PIIKindEmail {
+		t.Fatalf("stored MaskKinds were mutated, got %v", got.MaskKinds)
+	}
+}
+
+func TestDefensiveCopyMaskKindsOnGet(t *testing.T) {
+	s := NewMemoryStore(10)
+	ctx := context.Background()
+
+	session := newTestSession("id-1")
+	session.MaskKindsSet = true
+	session.MaskKinds = []pii.PIIKind{pii.PIIKindPhone, pii.PIIKindEmail}
+	if _, err := s.PutIfAbsent(ctx, session); err != nil {
+		t.Fatalf("PutIfAbsent returned error: %v", err)
+	}
+
+	got, err := s.Get(ctx, "id-1")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+
+	// Mutate the returned session's MaskKinds.
+	got.MaskKinds[0] = pii.PIIKindINN
+
+	again, err := s.Get(ctx, "id-1")
+	if err != nil {
+		t.Fatalf("second Get returned error: %v", err)
+	}
+	if !again.MaskKindsSet {
+		t.Fatal("expected MaskKindsSet to be true")
+	}
+	if len(again.MaskKinds) != 2 || again.MaskKinds[0] != pii.PIIKindPhone || again.MaskKinds[1] != pii.PIIKindEmail {
+		t.Fatalf("stored MaskKinds were mutated via Get, got %v", again.MaskKinds)
+	}
+}

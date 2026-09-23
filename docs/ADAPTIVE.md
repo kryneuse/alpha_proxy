@@ -1,3 +1,5 @@
+> Current testing deployment: `scripts/run_local_adaptive.py --auth-mode verify`. Authentication is disabled; inference remains real. The default launcher mode still requires an API key. Measurements below describe the earlier authenticated run.
+
 # Adaptive PII: quality cascade + spaCy
 
 Текущий локальный запуск и фактические замеры: [RUNNING_ON_MAC.md](RUNNING_ON_MAC.md).

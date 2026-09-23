@@ -58,13 +58,22 @@ func run(ctx context.Context) error {
 
 	logger := observability.NewLogger()
 
-	processor, cleanup, err := buildProcessor(cfg)
+	var metrics *observability.Metrics
+	if cfg.MetricsEnabled {
+		var err error
+		metrics, err = observability.NewMetrics()
+		if err != nil {
+			return fmt.Errorf("create metrics: %w", err)
+		}
+	}
+
+	processor, cleanup, err := buildProcessorWithMetrics(cfg, metrics)
 	if err != nil {
 		return fmt.Errorf("build processor: %w", err)
 	}
 	defer cleanup()
 
-	runtime, err := app.NewRuntime(cfg, logger, processor)
+	runtime, err := app.NewRuntimeWithMetrics(cfg, logger, processor, metrics)
 	if err != nil {
 		return fmt.Errorf("build runtime: %w", err)
 	}
@@ -78,7 +87,8 @@ func run(ctx context.Context) error {
 		IdleTimeout:       cfg.IdleTimeout,
 	}
 
-	listener, err := net.Listen("tcp", cfg.Addr)
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -97,6 +107,12 @@ func run(ctx context.Context) error {
 // function. The mock is a temporary stub and is allowed only in dev mode;
 // verify/final modes require a real Processor wired to the Python ML service.
 func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
+	return buildProcessorWithMetrics(cfg, nil)
+}
+
+// buildProcessorWithMetrics is buildProcessor with optional metrics observation
+// wired into the ML, cascade and masking pipeline.
+func buildProcessorWithMetrics(cfg config.Config, metrics *observability.Metrics) (contract.Processor, func(), error) {
 	if cfg.ProcessorMode == config.ProcessorMock {
 		if cfg.RunMode != config.RunModeDev {
 			return nil, nil, fmt.Errorf("mock processor is allowed only in dev mode")
@@ -134,7 +150,8 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("ml batch config: %w", err)
 	}
-	batcher, err = ml.NewBatcher(grpcClient, batchCfg)
+	mlClient := observability.NewInstrumentedMLClient(grpcClient, metrics)
+	batcher, err = ml.NewBatcher(mlClient, batchCfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ml batcher: %w", err)
 	}
@@ -145,10 +162,12 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 
 	eng := engine.New(engine.Options{})
 	casc := cascade.New(eng, extractor)
-	cascadeMasker, err := masking.NewCascadeMasker(casc, ml.DefaultChunkConfig(), 8)
+	cascadeMasker, err := masking.NewCascadeMasker(observability.NewInstrumentedCascade(casc, metrics), ml.DefaultChunkConfig(), 8)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create cascade masker: %w", err)
 	}
+	var masker processor.Masker = cascadeMasker
+	masker = observability.NewInstrumentedMasker(masker, metrics)
 
 	sessionCapacity := 100000
 	if value := os.Getenv("ALPHA_PROXY_SESSION_CAPACITY"); value != "" {
@@ -158,8 +177,12 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 		}
 	}
 	st := store.NewMemoryStore(sessionCapacity)
-	pp := policy.NewStaticProvider(buildPolicies(cfg))
-	proc, err := processor.New(st, pp, cascadeMasker, 15*time.Minute)
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build policies: %w", err)
+	}
+	pp := policy.NewStaticProvider(policies)
+	proc, err := processor.New(st, pp, masker, 15*time.Minute)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create processor: %w", err)
 	}
@@ -169,23 +192,74 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 }
 
 // buildPolicies builds a policy for the verify consumer and every enabled
-// system, allowing all PII kinds with detokenization enabled.
-func buildPolicies(cfg config.Config) map[string]pii.Policy {
-	allowed := allKinds()
-	pol := pii.Policy{
-		AllowedKinds:          allowed,
+// system. The verify consumer allows all PII kinds with detokenization enabled.
+// Each enabled system gets its own policy derived from its optional mask_kinds
+// and detokenization_allowed settings.
+func buildPolicies(cfg config.Config) (map[string]pii.Policy, error) {
+	verifyPol := pii.Policy{
+		AllowedKinds:          allKinds(),
 		DetokenizationAllowed: true,
 		MinConfidence:         0.5,
 	}
 	policies := map[string]pii.Policy{
-		auth.VerifyConsumerID: pol,
+		auth.VerifyConsumerID: verifyPol,
 	}
 	for _, s := range cfg.Systems {
-		if s.Enabled {
-			policies[s.ID] = pol
+		if !s.Enabled {
+			continue
 		}
+		pol, err := systemPolicy(s)
+		if err != nil {
+			return nil, err
+		}
+		policies[s.ID] = pol
 	}
-	return policies
+	return policies, nil
+}
+
+// systemPolicy builds a pii.Policy for a single system. An absent mask_kinds
+// allows all known kinds; an empty mask_kinds allows nothing; a non-empty list
+// restricts masking to exactly those kinds. An absent detokenization_allowed
+// keeps detokenization enabled.
+func systemPolicy(s config.System) (pii.Policy, error) {
+	pol := pii.Policy{
+		DetokenizationAllowed: true,
+		MinConfidence:         0.5,
+	}
+	if s.DetokenizationAllowed != nil {
+		pol.DetokenizationAllowed = *s.DetokenizationAllowed
+	}
+	if s.MaskKinds == nil {
+		pol.AllowedKinds = allKinds()
+		return pol, nil
+	}
+	allowed := make(map[pii.PIIKind]bool, len(*s.MaskKinds))
+	for _, k := range *s.MaskKinds {
+		kind := pii.PIIKind(k)
+		if !isKnownPIIKind(kind) {
+			return pii.Policy{}, fmt.Errorf("system %q: unknown mask kind %q", s.ID, k)
+		}
+		allowed[kind] = true
+	}
+	pol.AllowedKinds = allowed
+	return pol, nil
+}
+
+func isKnownPIIKind(kind pii.PIIKind) bool {
+	switch kind {
+	case pii.PIIKindFullName, pii.PIIKindFirstName, pii.PIIKindLastName,
+		pii.PIIKindMiddleName, pii.PIIKindAddress, pii.PIIKindCity,
+		pii.PIIKindStreet, pii.PIIKindHouse, pii.PIIKindApartment,
+		pii.PIIKindBirthPlace, pii.PIIKindCitizenship, pii.PIIKindPassportIssuer,
+		pii.PIIKindCardHolderName, pii.PIIKindEmail, pii.PIIKindPhone,
+		pii.PIIKindINN, pii.PIIKindBankCard, pii.PIIKindPassport,
+		pii.PIIKindPassportDivision, pii.PIIKindDate, pii.PIIKindDriverLicense,
+		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode,
+		pii.PIIKindCountry, pii.PIIKindRegion, pii.PIIKindDistrict:
+		return true
+	default:
+		return false
+	}
 }
 
 func allKinds() map[pii.PIIKind]bool {

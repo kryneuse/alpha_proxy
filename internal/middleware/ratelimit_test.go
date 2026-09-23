@@ -21,8 +21,6 @@ type fakeClock struct {
 
 func (c *fakeClock) Now() time.Time { return c.t }
 
-func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
-
 func TestGlobalRateLimitExhausted(t *testing.T) {
 	clock := &fakeClock{t: time.Unix(0, 0)}
 	bucket := ratelimit.NewTokenBucket(1, 1, clock)

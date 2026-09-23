@@ -28,6 +28,7 @@ func BenchmarkCascadeAnalyzeRules(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		c.AnalyzeRules(benchChunk)
+
 	}
 }
 
@@ -36,6 +37,9 @@ func BenchmarkCascadeDetectChunk(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.DetectChunk(ctx, benchChunk, benchChunk)
+		if _, err := c.DetectChunk(ctx, benchChunk, benchChunk); err != nil {
+			b.Fatal(err)
+		}
+
 	}
 }
