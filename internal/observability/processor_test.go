@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
 func TestNewInstrumentedProcessorRejectsNilProcessor(t *testing.T) {
@@ -87,6 +88,30 @@ func TestInstrumentedProcessorSuccess(t *testing.T) {
 	}
 	if want := finish.Sub(start).Seconds(); sum != want {
 		t.Errorf("histogram sample_sum = %v, want %v", sum, want)
+	}
+}
+
+func TestInstrumentedProcessorSetsOperationProcess(t *testing.T) {
+	m, err := NewMetrics()
+	if err != nil {
+		t.Fatalf("NewMetrics() error: %v", err)
+	}
+
+	clock := fakeClock(time.Unix(100, 0), time.Unix(100, 100_000_000))
+	meta := &requestmeta.Meta{}
+	ctx := requestmeta.With(context.Background(), meta)
+
+	stub := &stubProcessor{result: "masked"}
+	proc, err := newInstrumentedProcessor(stub, m, clock)
+	if err != nil {
+		t.Fatalf("newInstrumentedProcessor() error: %v", err)
+	}
+
+	if _, err := proc.Process(ctx, contract.ProcessRequest{}); err != nil {
+		t.Fatalf("Process() error: %v", err)
+	}
+	if meta.Operation != "process" {
+		t.Errorf("Operation = %q, want process", meta.Operation)
 	}
 }
 

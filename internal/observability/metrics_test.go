@@ -151,6 +151,88 @@ func TestObserveProcessorUnknownOutcome(t *testing.T) {
 	}
 }
 
+func TestObservePIIEntity(t *testing.T) {
+	m, err := NewMetrics()
+	if err != nil {
+		t.Fatalf("NewMetrics() error: %v", err)
+	}
+
+	m.ObservePIIEntity("phone")
+	m.ObservePIIEntity("phone")
+	m.ObservePIIEntity("email")
+
+	if got := testutil.ToFloat64(m.piiEntitiesTotal.WithLabelValues("phone")); got != 2 {
+		t.Errorf("phone counter = %v, want 2", got)
+	}
+	if got := testutil.ToFloat64(m.piiEntitiesTotal.WithLabelValues("email")); got != 1 {
+		t.Errorf("email counter = %v, want 1", got)
+	}
+}
+
+func TestObserveMLRequest(t *testing.T) {
+	m, err := NewMetrics()
+	if err != nil {
+		t.Fatalf("NewMetrics() error: %v", err)
+	}
+
+	const duration = 30 * time.Millisecond
+	m.ObserveMLRequest("success", duration)
+	m.ObserveMLRequest("error", duration)
+
+	if got := testutil.ToFloat64(m.mlRequestsTotal.WithLabelValues("success")); got != 1 {
+		t.Errorf("success counter = %v, want 1", got)
+	}
+	if got := testutil.ToFloat64(m.mlRequestsTotal.WithLabelValues("error")); got != 1 {
+		t.Errorf("error counter = %v, want 1", got)
+	}
+	count, sum := histogramStats(t, m, "alpha_proxy_ml_request_duration_seconds",
+		map[string]string{"outcome": "success"})
+	if count != 1 {
+		t.Errorf("success histogram sample_count = %d, want 1", count)
+	}
+	if sum != duration.Seconds() {
+		t.Errorf("success histogram sample_sum = %v, want %v", sum, duration.Seconds())
+	}
+}
+
+func TestObserveMLRequestNormalizesOutcome(t *testing.T) {
+	m, err := NewMetrics()
+	if err != nil {
+		t.Fatalf("NewMetrics() error: %v", err)
+	}
+
+	m.ObserveMLRequest("weird", time.Millisecond)
+	if got := testutil.ToFloat64(m.mlRequestsTotal.WithLabelValues("error")); got != 1 {
+		t.Errorf("unknown outcome counter = %v, want 1", got)
+	}
+}
+
+func TestObserveCascadeRoute(t *testing.T) {
+	m, err := NewMetrics()
+	if err != nil {
+		t.Fatalf("NewMetrics() error: %v", err)
+	}
+
+	for _, route := range []string{"safe", "rule", "ml"} {
+		m.ObserveCascadeRoute(route)
+		if got := testutil.ToFloat64(m.cascadeRoutesTotal.WithLabelValues(route)); got != 1 {
+			t.Errorf("route %q counter = %v, want 1", route, got)
+		}
+	}
+}
+
+func TestObserveCascadeRouteNormalizesUnknown(t *testing.T) {
+	m, err := NewMetrics()
+	if err != nil {
+		t.Fatalf("NewMetrics() error: %v", err)
+	}
+
+	m.ObserveCascadeRoute("bogus")
+	if got := testutil.ToFloat64(m.cascadeRoutesTotal.WithLabelValues("safe")); got != 1 {
+		t.Errorf("unknown route counter = %v, want 1", got)
+	}
+}
+
 func TestHandlerExpositionFormat(t *testing.T) {
 	m, err := NewMetrics()
 	if err != nil {
@@ -158,6 +240,9 @@ func TestHandlerExpositionFormat(t *testing.T) {
 	}
 	m.ObserveHTTPRequest("POST", "POST /process", 200, time.Millisecond)
 	m.ObserveProcessor("success", time.Millisecond)
+	m.ObservePIIEntity("phone")
+	m.ObserveMLRequest("success", time.Millisecond)
+	m.ObserveCascadeRoute("ml")
 
 	handler := m.Handler()
 	rec := httptest.NewRecorder()
@@ -179,6 +264,10 @@ func TestHandlerExpositionFormat(t *testing.T) {
 		"alpha_proxy_http_timeouts_total",
 		"alpha_proxy_processor_calls_total",
 		"alpha_proxy_processor_duration_seconds",
+		"alpha_proxy_pii_entities_total",
+		"alpha_proxy_ml_requests_total",
+		"alpha_proxy_ml_request_duration_seconds",
+		"alpha_proxy_cascade_routes_total",
 	} {
 		if !strings.Contains(body, name) {
 			t.Errorf("handler output missing metric %q", name)

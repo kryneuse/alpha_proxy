@@ -60,13 +60,22 @@ func run(ctx context.Context) error {
 
 	logger := observability.NewLogger()
 
-	processor, cleanup, err := buildProcessor(cfg)
+	var metrics *observability.Metrics
+	if cfg.MetricsEnabled {
+		var err error
+		metrics, err = observability.NewMetrics()
+		if err != nil {
+			return fmt.Errorf("create metrics: %w", err)
+		}
+	}
+
+	processor, cleanup, err := buildProcessorWithMetrics(cfg, metrics)
 	if err != nil {
 		return fmt.Errorf("build processor: %w", err)
 	}
 	defer cleanup()
 
-	runtime, err := app.NewRuntime(cfg, logger, processor)
+	runtime, err := app.NewRuntimeWithMetrics(cfg, logger, processor, metrics)
 	if err != nil {
 		return fmt.Errorf("build runtime: %w", err)
 	}
@@ -100,6 +109,12 @@ func run(ctx context.Context) error {
 // function. The mock is a temporary stub and is allowed only in dev mode;
 // verify/final modes require a real Processor wired to the Python ML service.
 func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
+	return buildProcessorWithMetrics(cfg, nil)
+}
+
+// buildProcessorWithMetrics is buildProcessor with optional metrics observation
+// wired into the ML, cascade and masking pipeline.
+func buildProcessorWithMetrics(cfg config.Config, metrics *observability.Metrics) (contract.Processor, func(), error) {
 	if cfg.ProcessorMode == config.ProcessorMock {
 		if cfg.RunMode != config.RunModeDev {
 			return nil, nil, fmt.Errorf("mock processor is allowed only in dev mode")
@@ -133,7 +148,9 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ml grpc client: %w", err)
 	}
-	batcher, err = ml.NewBatcher(grpcClient, ml.DefaultBatchConfig())
+	var mlClient ml.Client = grpcClient
+	mlClient = observability.NewInstrumentedMLClient(mlClient, metrics)
+	batcher, err = ml.NewBatcher(mlClient, ml.DefaultBatchConfig())
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ml batcher: %w", err)
 	}
@@ -145,10 +162,12 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 	eng := engine.New(engine.Options{})
 	g := gate.New(gate.DefaultConfig())
 	casc := cascade.New(eng, g, nil, extractor)
-	cascadeMasker, err := masking.NewCascadeMasker(casc, ml.DefaultChunkConfig(), 8)
+	cascadeMasker, err := masking.NewCascadeMasker(observability.NewInstrumentedCascade(casc, metrics), ml.DefaultChunkConfig(), 8)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create cascade masker: %w", err)
 	}
+	var masker processor.Masker = cascadeMasker
+	masker = observability.NewInstrumentedMasker(masker, metrics)
 
 	st := store.NewMemoryStore(100000)
 	policies, err := buildPolicies(cfg)
@@ -156,7 +175,7 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 		return nil, nil, fmt.Errorf("build policies: %w", err)
 	}
 	pp := policy.NewStaticProvider(policies)
-	proc, err := processor.New(st, pp, cascadeMasker, 15*time.Minute)
+	proc, err := processor.New(st, pp, masker, 15*time.Minute)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create processor: %w", err)
 	}

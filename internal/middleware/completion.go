@@ -44,6 +44,14 @@ func CompletionLogger(log *observability.Logger, next http.Handler) http.Handler
 		if meta.ConsumerID != "" {
 			args = append(args, "consumer_id", meta.ConsumerID)
 		}
+		if meta.Operation != "" {
+			args = append(args, "operation", meta.Operation)
+		}
+		args = append(args, "pii_count", meta.PIICount)
+		if len(meta.PIITypes) > 0 {
+			args = append(args, "pii_types", meta.PIITypes)
+		}
+		args = append(args, "ml_invoked", meta.MLInvoked())
 		log.Info("request_completed", args...)
 	})
 }
