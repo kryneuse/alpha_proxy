@@ -360,6 +360,110 @@ func TestLoadSystemsFromFile(t *testing.T) {
 	}
 }
 
+func TestLoadSystemMaskKindsAbsent(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	content := `[{"id":"sys-a","enabled":true,"api_key":"secret-a"}]`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Systems) != 1 {
+		t.Fatalf("expected 1 system, got %d", len(cfg.Systems))
+	}
+	s := cfg.Systems[0]
+	if s.MaskKinds != nil {
+		t.Errorf("MaskKinds = %v, want nil", s.MaskKinds)
+	}
+	if s.DetokenizationAllowed != nil {
+		t.Errorf("DetokenizationAllowed = %v, want nil", *s.DetokenizationAllowed)
+	}
+}
+
+func TestLoadSystemMaskKindsNonEmpty(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	content := `[{"id":"sys-a","enabled":true,"api_key":"secret-a","mask_kinds":["phone","email"]}]`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Systems) != 1 {
+		t.Fatalf("expected 1 system, got %d", len(cfg.Systems))
+	}
+	s := cfg.Systems[0]
+	if s.MaskKinds == nil {
+		t.Fatal("MaskKinds = nil, want non-nil")
+	}
+	if len(*s.MaskKinds) != 2 || (*s.MaskKinds)[0] != "phone" || (*s.MaskKinds)[1] != "email" {
+		t.Errorf("MaskKinds = %v, want [phone email]", *s.MaskKinds)
+	}
+}
+
+func TestLoadSystemMaskKindsEmpty(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	content := `[{"id":"sys-a","enabled":true,"api_key":"secret-a","mask_kinds":[]}]`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Systems) != 1 {
+		t.Fatalf("expected 1 system, got %d", len(cfg.Systems))
+	}
+	s := cfg.Systems[0]
+	if s.MaskKinds == nil {
+		t.Fatal("MaskKinds = nil, want non-nil empty slice")
+	}
+	if len(*s.MaskKinds) != 0 {
+		t.Errorf("MaskKinds = %v, want empty", *s.MaskKinds)
+	}
+}
+
+func TestLoadSystemDetokenizationAllowedFalse(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	content := `[{"id":"sys-a","enabled":true,"api_key":"secret-a","detokenization_allowed":false}]`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Systems) != 1 {
+		t.Fatalf("expected 1 system, got %d", len(cfg.Systems))
+	}
+	s := cfg.Systems[0]
+	if s.DetokenizationAllowed == nil {
+		t.Fatal("DetokenizationAllowed = nil, want non-nil")
+	}
+	if *s.DetokenizationAllowed {
+		t.Errorf("DetokenizationAllowed = true, want false")
+	}
+}
+
 func TestLoadShutdownTimeoutDefault(t *testing.T) {
 	clearEnv(t)
 	dir := t.TempDir()

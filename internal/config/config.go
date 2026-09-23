@@ -53,6 +53,17 @@ type System struct {
 	ID      string `json:"id"`
 	Enabled bool   `json:"enabled"`
 	APIKey  string `json:"api_key"`
+	// MaskKinds optionally restricts the PII kinds this system may mask. A nil
+	// pointer means the field is absent and, for backward compatibility, all
+	// known kinds are allowed. A non-nil pointer to an empty slice means the
+	// system masks nothing. A non-nil pointer to a non-empty slice restricts
+	// masking to exactly those kinds.
+	MaskKinds *[]string `json:"mask_kinds,omitempty"`
+	// DetokenizationAllowed optionally controls whether this system may
+	// detokenize. A nil pointer means the field is absent and, for backward
+	// compatibility, detokenization is allowed. A non-nil pointer overrides the
+	// default.
+	DetokenizationAllowed *bool `json:"detokenization_allowed,omitempty"`
 }
 
 // Config holds all settings needed to run the HTTP contour.

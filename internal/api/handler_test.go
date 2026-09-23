@@ -421,6 +421,35 @@ func TestProcessMaskKindsPolicyRejected(t *testing.T) {
 	}
 }
 
+func TestProcessDemaskingDisabled(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"plain", pii.ErrDemaskingDisabled},
+		{"wrapped", fmt.Errorf("wrapped: %w", pii.ErrDemaskingDisabled)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &fakeProcessor{err: tt.err}
+			handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+			req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"hello","payload_id":"id-42"}`))
+			req.Header.Set("Content-Type", "application/json")
+
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403", rec.Code)
+			}
+			if rec.Body.String() != "detokenization disabled\n" {
+				t.Errorf("body = %q, want detokenization disabled", rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestProcessPreservesContext(t *testing.T) {
 	type markerKey struct{}
 	const marker = "marker-value"

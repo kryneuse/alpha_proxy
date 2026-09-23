@@ -1,0 +1,16 @@
+[
+  {
+    "id": "support",
+    "enabled": true,
+    "api_key": "demo-support-key",
+    "mask_kinds": ["full_name", "phone", "email"],
+    "detokenization_allowed": true
+  },
+  {
+    "id": "analytics",
+    "enabled": true,
+    "api_key": "demo-analytics-key",
+    "mask_kinds": ["full_name", "phone", "email", "passport", "card", "inn"],
+    "detokenization_allowed": false
+  }
+]

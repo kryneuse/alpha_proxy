@@ -76,6 +76,9 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, pii.ErrPolicyRejected):
 			setErrorClass(r, "policy_rejected")
 			http.Error(w, "policy rejected", http.StatusForbidden)
+		case errors.Is(err, pii.ErrDemaskingDisabled):
+			setErrorClass(r, "demasking_disabled")
+			http.Error(w, "detokenization disabled", http.StatusForbidden)
 		default:
 			http.Error(w, "internal error", http.StatusInternalServerError)
 		}

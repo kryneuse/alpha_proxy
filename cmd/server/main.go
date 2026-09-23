@@ -151,7 +151,11 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 	}
 
 	st := store.NewMemoryStore(100000)
-	pp := policy.NewStaticProvider(buildPolicies(cfg))
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build policies: %w", err)
+	}
+	pp := policy.NewStaticProvider(policies)
 	proc, err := processor.New(st, pp, cascadeMasker, 15*time.Minute)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create processor: %w", err)
@@ -162,23 +166,73 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 }
 
 // buildPolicies builds a policy for the verify consumer and every enabled
-// system, allowing all PII kinds with detokenization enabled.
-func buildPolicies(cfg config.Config) map[string]pii.Policy {
-	allowed := allKinds()
-	pol := pii.Policy{
-		AllowedKinds:          allowed,
+// system. The verify consumer allows all PII kinds with detokenization enabled.
+// Each enabled system gets its own policy derived from its optional mask_kinds
+// and detokenization_allowed settings.
+func buildPolicies(cfg config.Config) (map[string]pii.Policy, error) {
+	verifyPol := pii.Policy{
+		AllowedKinds:          allKinds(),
 		DetokenizationAllowed: true,
 		MinConfidence:         0.5,
 	}
 	policies := map[string]pii.Policy{
-		auth.VerifyConsumerID: pol,
+		auth.VerifyConsumerID: verifyPol,
 	}
 	for _, s := range cfg.Systems {
-		if s.Enabled {
-			policies[s.ID] = pol
+		if !s.Enabled {
+			continue
 		}
+		pol, err := systemPolicy(s)
+		if err != nil {
+			return nil, err
+		}
+		policies[s.ID] = pol
 	}
-	return policies
+	return policies, nil
+}
+
+// systemPolicy builds a pii.Policy for a single system. An absent mask_kinds
+// allows all known kinds; an empty mask_kinds allows nothing; a non-empty list
+// restricts masking to exactly those kinds. An absent detokenization_allowed
+// keeps detokenization enabled.
+func systemPolicy(s config.System) (pii.Policy, error) {
+	pol := pii.Policy{
+		DetokenizationAllowed: true,
+		MinConfidence:         0.5,
+	}
+	if s.DetokenizationAllowed != nil {
+		pol.DetokenizationAllowed = *s.DetokenizationAllowed
+	}
+	if s.MaskKinds == nil {
+		pol.AllowedKinds = allKinds()
+		return pol, nil
+	}
+	allowed := make(map[pii.PIIKind]bool, len(*s.MaskKinds))
+	for _, k := range *s.MaskKinds {
+		kind := pii.PIIKind(k)
+		if !isKnownPIIKind(kind) {
+			return pii.Policy{}, fmt.Errorf("system %q: unknown mask kind %q", s.ID, k)
+		}
+		allowed[kind] = true
+	}
+	pol.AllowedKinds = allowed
+	return pol, nil
+}
+
+func isKnownPIIKind(kind pii.PIIKind) bool {
+	switch kind {
+	case pii.PIIKindFullName, pii.PIIKindFirstName, pii.PIIKindLastName,
+		pii.PIIKindMiddleName, pii.PIIKindAddress, pii.PIIKindCity,
+		pii.PIIKindStreet, pii.PIIKindHouse, pii.PIIKindApartment,
+		pii.PIIKindBirthPlace, pii.PIIKindCitizenship, pii.PIIKindPassportIssuer,
+		pii.PIIKindCardHolderName, pii.PIIKindEmail, pii.PIIKindPhone,
+		pii.PIIKindINN, pii.PIIKindBankCard, pii.PIIKindPassport,
+		pii.PIIKindPassportDivision, pii.PIIKindDate, pii.PIIKindDriverLicense,
+		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode:
+		return true
+	default:
+		return false
+	}
 }
 
 func allKinds() map[pii.PIIKind]bool {

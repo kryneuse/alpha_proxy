@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kryneuse/alpha_proxy/internal/auth"
 	"github.com/kryneuse/alpha_proxy/internal/config"
 	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/pii"
 )
 
 func TestRunRejectsNilContext(t *testing.T) {
@@ -130,5 +132,122 @@ func TestBuildProcessorMockNotInDev(t *testing.T) {
 	}
 	if _, _, err := buildProcessor(cfg); err == nil {
 		t.Fatal("expected error for mock processor outside dev mode")
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }
+
+func strSlicePtr(s []string) *[]string { return &s }
+
+func TestBuildPoliciesDifferentAllowedKinds(t *testing.T) {
+	cfg := config.Config{
+		Systems: []config.System{
+			{ID: "support", Enabled: true, APIKey: "k1", MaskKinds: strSlicePtr([]string{"phone"})},
+			{ID: "analytics", Enabled: true, APIKey: "k2", MaskKinds: strSlicePtr([]string{"email"})},
+		},
+	}
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		t.Fatalf("buildPolicies error: %v", err)
+	}
+	support := policies["support"]
+	analytics := policies["analytics"]
+	if support.AllowedKinds[pii.PIIKindPhone] && !support.AllowedKinds[pii.PIIKindEmail] {
+		// ok
+	} else {
+		t.Errorf("support AllowedKinds = %v, want only phone", support.AllowedKinds)
+	}
+	if analytics.AllowedKinds[pii.PIIKindEmail] && !analytics.AllowedKinds[pii.PIIKindPhone] {
+		// ok
+	} else {
+		t.Errorf("analytics AllowedKinds = %v, want only email", analytics.AllowedKinds)
+	}
+}
+
+func TestBuildPoliciesDetokenizationPerSystem(t *testing.T) {
+	cfg := config.Config{
+		Systems: []config.System{
+			{ID: "support", Enabled: true, APIKey: "k1", DetokenizationAllowed: boolPtr(true)},
+			{ID: "analytics", Enabled: true, APIKey: "k2", DetokenizationAllowed: boolPtr(false)},
+		},
+	}
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		t.Fatalf("buildPolicies error: %v", err)
+	}
+	if !policies["support"].DetokenizationAllowed {
+		t.Errorf("support DetokenizationAllowed = false, want true")
+	}
+	if policies["analytics"].DetokenizationAllowed {
+		t.Errorf("analytics DetokenizationAllowed = true, want false")
+	}
+}
+
+func TestBuildPoliciesEmptyMaskKinds(t *testing.T) {
+	cfg := config.Config{
+		Systems: []config.System{
+			{ID: "sys-a", Enabled: true, APIKey: "k1", MaskKinds: strSlicePtr([]string{})},
+		},
+	}
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		t.Fatalf("buildPolicies error: %v", err)
+	}
+	if len(policies["sys-a"].AllowedKinds) != 0 {
+		t.Errorf("AllowedKinds = %v, want empty", policies["sys-a"].AllowedKinds)
+	}
+}
+
+func TestBuildPoliciesAbsentMaskKindsAllowsAll(t *testing.T) {
+	cfg := config.Config{
+		Systems: []config.System{
+			{ID: "sys-a", Enabled: true, APIKey: "k1"},
+		},
+	}
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		t.Fatalf("buildPolicies error: %v", err)
+	}
+	if len(policies["sys-a"].AllowedKinds) != len(allKinds()) {
+		t.Errorf("AllowedKinds = %v, want all kinds", policies["sys-a"].AllowedKinds)
+	}
+}
+
+func TestBuildPoliciesUnknownKindError(t *testing.T) {
+	cfg := config.Config{
+		Systems: []config.System{
+			{ID: "sys-a", Enabled: true, APIKey: "k1", MaskKinds: strSlicePtr([]string{"bogus"})},
+		},
+	}
+	_, err := buildPolicies(cfg)
+	if err == nil {
+		t.Fatal("expected error for unknown mask kind")
+	}
+	if !strings.Contains(err.Error(), "sys-a") {
+		t.Errorf("error must name the system, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "k1") {
+		t.Errorf("error must not include the api key, got: %v", err)
+	}
+}
+
+func TestBuildPoliciesMutationIsolated(t *testing.T) {
+	cfg := config.Config{
+		Systems: []config.System{
+			{ID: "support", Enabled: true, APIKey: "k1", MaskKinds: strSlicePtr([]string{"phone"})},
+			{ID: "analytics", Enabled: true, APIKey: "k2", MaskKinds: strSlicePtr([]string{"email"})},
+		},
+	}
+	policies, err := buildPolicies(cfg)
+	if err != nil {
+		t.Fatalf("buildPolicies error: %v", err)
+	}
+	// Mutate one system's policy; the other must be unaffected.
+	policies["support"].AllowedKinds[pii.PIIKindINN] = true
+	if policies["analytics"].AllowedKinds[pii.PIIKindINN] {
+		t.Errorf("analytics AllowedKinds mutated via support, got %v", policies["analytics"].AllowedKinds)
+	}
+	if policies[auth.VerifyConsumerID].AllowedKinds[pii.PIIKindINN] != true {
+		t.Errorf("verify AllowedKinds must allow inn, got %v", policies[auth.VerifyConsumerID].AllowedKinds)
 	}
 }
