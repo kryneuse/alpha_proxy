@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -151,6 +152,37 @@ func postProcess(t *testing.T, url, payload, payloadID string) (int, string) {
 	return resp.StatusCode, out.Result
 }
 
+// postProcessWithMaskKinds отправляет POST /process с mask_kinds как массивом.
+func postProcessWithMaskKinds(t *testing.T, url, payload, payloadID string, maskKinds []string) (int, string) {
+	t.Helper()
+	body, _ := json.Marshal(map[string]any{
+		"payload":    payload,
+		"payload_id": payloadID,
+		"mask_kinds": maskKinds,
+	})
+	req, err := http.NewRequest(http.MethodPost, url+"/process", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	var out e2eResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return resp.StatusCode, string(raw)
+	}
+	return resp.StatusCode, out.Result
+}
+
 func extractToken(result string) string {
 	start := strings.Index(result, "<")
 	end := strings.Index(result, ">")
@@ -238,5 +270,56 @@ func TestE2EMLMasking(t *testing.T) {
 			t.Fatalf("duplicate chunk_id %q", id)
 		}
 		seen[id] = true
+	}
+}
+
+func TestE2EMaskKindsFiltersResult(t *testing.T) {
+	fake, url := startE2E(t)
+
+	payload := "паспорт СЕКРЕТ 79123456789"
+	payloadID := "id-maskkinds-phone"
+
+	status, result := postProcessWithMaskKinds(t, url, payload, payloadID, []string{"phone"})
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if !strings.Contains(result, "PHONE") {
+		t.Fatalf("expected PHONE token, got %q", result)
+	}
+	if strings.Contains(result, "79123456789") {
+		t.Fatalf("phone must be masked, got %q", result)
+	}
+	if !strings.Contains(result, "СЕКРЕТ") {
+		t.Fatalf("СЕКРЕТ must remain unmasked, got %q", result)
+	}
+	if fake.callCount() < 1 {
+		t.Fatal("expected at least one DetectBatch call to prove result filtering")
+	}
+}
+
+func TestE2EMaskKindsEmptyArrayNoMasking(t *testing.T) {
+	_, url := startE2E(t)
+
+	payload := "call 79123456789 СЕКРЕТ"
+	payloadID := "id-maskkinds-empty"
+
+	status, result := postProcessWithMaskKinds(t, url, payload, payloadID, []string{})
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if result != payload {
+		t.Fatalf("expected original text unmasked, got %q", result)
+	}
+}
+
+func TestE2EMaskKindsUnknownType(t *testing.T) {
+	_, url := startE2E(t)
+
+	payload := "call 79123456789"
+	payloadID := "id-maskkinds-unknown"
+
+	status, _ := postProcessWithMaskKinds(t, url, payload, payloadID, []string{"unknown"})
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", status)
 	}
 }

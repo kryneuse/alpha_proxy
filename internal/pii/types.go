@@ -72,4 +72,8 @@ type Session struct {
 	Status      SessionStatus
 	CreatedAt   time.Time
 	ExpiresAt   time.Time
+	// MaskKindsSet distinguishes an absent mask_kinds field from an explicitly
+	// passed empty array. When true, MaskKinds narrows the kinds to mask.
+	MaskKindsSet bool
+	MaskKinds    []PIIKind
 }

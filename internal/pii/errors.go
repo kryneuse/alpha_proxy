@@ -14,4 +14,5 @@ var (
 	ErrDemaskingDisabled    = errors.New("demasking disabled")
 	ErrUnknownToken         = errors.New("unknown token")
 	ErrPayloadTooLarge      = errors.New("payload too large")
+	ErrInvalidMaskKind      = errors.New("invalid mask kind")
 )

@@ -14,6 +14,7 @@ import (
 
 	"github.com/kryneuse/alpha_proxy/internal/auth"
 	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/pii"
 	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
@@ -33,8 +34,9 @@ func NewHandler(p contract.Processor) *Handler {
 // processRequest is the HTTP-layer DTO. Pointers distinguish a present field
 // from an absent one. It is intentionally separate from contract.ProcessRequest.
 type processRequest struct {
-	Payload   *string `json:"payload"`
-	PayloadID *string `json:"payload_id"`
+	Payload   *string   `json:"payload"`
+	PayloadID *string   `json:"payload_id"`
+	MaskKinds *[]string `json:"mask_kinds,omitempty"`
 }
 
 type processResponse struct {
@@ -54,9 +56,11 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := h.processor.Process(r.Context(), contract.ProcessRequest{
-		Payload:    *req.Payload,
-		PayloadID:  *req.PayloadID,
-		ConsumerID: auth.ConsumerID(r.Context()),
+		Payload:      *req.Payload,
+		PayloadID:    *req.PayloadID,
+		ConsumerID:   auth.ConsumerID(r.Context()),
+		MaskKinds:    maskKindsValue(req.MaskKinds),
+		MaskKindsSet: req.MaskKinds != nil,
 	})
 	if err != nil {
 		switch {
@@ -66,6 +70,12 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, context.DeadlineExceeded):
 			setErrorClass(r, "timeout")
 			http.Error(w, "request timed out", http.StatusServiceUnavailable)
+		case errors.Is(err, pii.ErrInvalidMaskKind):
+			setErrorClass(r, "invalid_mask_kind")
+			http.Error(w, "invalid mask kind", http.StatusBadRequest)
+		case errors.Is(err, pii.ErrPolicyRejected):
+			setErrorClass(r, "policy_rejected")
+			http.Error(w, "policy rejected", http.StatusForbidden)
 		default:
 			http.Error(w, "internal error", http.StatusInternalServerError)
 		}
@@ -74,6 +84,15 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(processResponse{Result: resp.Result})
+}
+
+// maskKindsValue returns the slice contents when the field is present, or nil
+// when it is absent.
+func maskKindsValue(kinds *[]string) []string {
+	if kinds == nil {
+		return nil
+	}
+	return *kinds
 }
 
 // setErrorClass records a safe error classification in the logging metadata.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -57,6 +59,12 @@ func (p *Processor) Process(ctx context.Context, req contract.ProcessRequest) (c
 	if err != nil {
 		return contract.ProcessResponse{}, err
 	}
+	if req.MaskKindsSet {
+		pol, err = applyMaskKinds(pol, req.MaskKinds)
+		if err != nil {
+			return contract.ProcessResponse{}, err
+		}
+	}
 
 	session, err := p.store.Get(ctx, req.PayloadID)
 	if err != nil && !errors.Is(err, pii.ErrSessionNotFound) {
@@ -69,11 +77,13 @@ func (p *Processor) Process(ctx context.Context, req contract.ProcessRequest) (c
 	now := p.now()
 	hash := sha256.Sum256([]byte(req.Payload))
 	newSession := &pii.Session{
-		PayloadID:   req.PayloadID,
-		PayloadHash: hash,
-		Status:      pii.SessionStatusProcessing,
-		CreatedAt:   now,
-		ExpiresAt:   now.Add(p.ttl),
+		PayloadID:    req.PayloadID,
+		PayloadHash:  hash,
+		Status:       pii.SessionStatusProcessing,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(p.ttl),
+		MaskKindsSet: req.MaskKindsSet,
+		MaskKinds:    canonicalMaskKinds(req.MaskKinds),
 	}
 
 	added, err := p.store.PutIfAbsent(ctx, newSession)
@@ -118,6 +128,10 @@ func (p *Processor) handleExisting(ctx context.Context, req contract.ProcessRequ
 	hash := sha256.Sum256([]byte(req.Payload))
 	if hash == session.PayloadHash {
 		// retry исходного запроса
+		if !maskKindsMatch(session, req) {
+			return contract.ProcessResponse{}, pii.ErrPayloadIDConflict
+		}
+
 		replacements := make([]pii.Replacement, 0, len(session.Mappings))
 		for _, m := range session.Mappings {
 			replacements = append(replacements, pii.Replacement{
@@ -161,4 +175,79 @@ func (p *Processor) handleExisting(ctx context.Context, req contract.ProcessRequ
 	}
 
 	return contract.ProcessResponse{Result: detokenized}, nil
+}
+
+// applyMaskKinds narrows the policy AllowedKinds to the request-provided kinds.
+// The requested list can only shrink the consumer policy, never expand it. An
+// unknown kind is ErrInvalidMaskKind; a known kind that the consumer policy
+// forbids is ErrPolicyRejected. Duplicates are allowed.
+func applyMaskKinds(pol pii.Policy, kinds []string) (pii.Policy, error) {
+	allowed := make(map[pii.PIIKind]bool, len(kinds))
+	for _, k := range kinds {
+		kind := pii.PIIKind(k)
+		if !isKnownKind(kind) {
+			return pii.Policy{}, fmt.Errorf("unknown mask kind %q: %w", k, pii.ErrInvalidMaskKind)
+		}
+		if !pol.AllowedKinds[kind] {
+			return pii.Policy{}, fmt.Errorf("mask kind %q not allowed by policy: %w", k, pii.ErrPolicyRejected)
+		}
+		allowed[kind] = true
+	}
+	pol.AllowedKinds = allowed
+	return pol, nil
+}
+
+func isKnownKind(kind pii.PIIKind) bool {
+	switch kind {
+	case pii.PIIKindFullName, pii.PIIKindFirstName, pii.PIIKindLastName,
+		pii.PIIKindMiddleName, pii.PIIKindAddress, pii.PIIKindCity,
+		pii.PIIKindStreet, pii.PIIKindHouse, pii.PIIKindApartment,
+		pii.PIIKindBirthPlace, pii.PIIKindCitizenship, pii.PIIKindPassportIssuer,
+		pii.PIIKindCardHolderName, pii.PIIKindEmail, pii.PIIKindPhone,
+		pii.PIIKindINN, pii.PIIKindBankCard, pii.PIIKindPassport,
+		pii.PIIKindPassportDivision, pii.PIIKindDate, pii.PIIKindDriverLicense,
+		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode:
+		return true
+	default:
+		return false
+	}
+}
+
+// canonicalMaskKinds removes duplicates and sorts by string value so that
+// "phone email" and "email phone" are treated as the same selection.
+func canonicalMaskKinds(kinds []string) []pii.PIIKind {
+	seen := make(map[pii.PIIKind]bool, len(kinds))
+	uniq := make([]pii.PIIKind, 0, len(kinds))
+	for _, k := range kinds {
+		kind := pii.PIIKind(k)
+		if seen[kind] {
+			continue
+		}
+		seen[kind] = true
+		uniq = append(uniq, kind)
+	}
+	sort.Slice(uniq, func(i, j int) bool { return uniq[i] < uniq[j] })
+	return uniq
+}
+
+// maskKindsMatch reports whether the request's mask_kinds selection matches the
+// one stored on the session. An absent field and an explicitly empty array are
+// treated as different settings.
+func maskKindsMatch(session *pii.Session, req contract.ProcessRequest) bool {
+	if session.MaskKindsSet != req.MaskKindsSet {
+		return false
+	}
+	if !session.MaskKindsSet {
+		return true
+	}
+	cur := canonicalMaskKinds(req.MaskKinds)
+	if len(session.MaskKinds) != len(cur) {
+		return false
+	}
+	for i := range cur {
+		if session.MaskKinds[i] != cur[i] {
+			return false
+		}
+	}
+	return true
 }

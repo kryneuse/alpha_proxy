@@ -20,6 +20,12 @@ type ProcessRequest struct {
 	PayloadID string
 	// ConsumerID identifies the caller/consumer of the request.
 	ConsumerID string
+	// MaskKinds optionally overrides the set of PII kinds to mask. When
+	// MaskKindsSet is true it narrows the consumer policy AllowedKinds to the
+	// listed kinds (an empty list means mask nothing). When MaskKindsSet is
+	// false the consumer policy is used unchanged.
+	MaskKinds    []string
+	MaskKindsSet bool
 }
 
 // ProcessResponse is the output produced by a Processor.

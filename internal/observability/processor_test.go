@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -69,7 +70,7 @@ func TestInstrumentedProcessorSuccess(t *testing.T) {
 	if stub.gotCtx != ctx {
 		t.Error("next received a different context")
 	}
-	if stub.gotReq != req {
+	if !reflect.DeepEqual(stub.gotReq, req) {
 		t.Errorf("next received request %+v, want %+v", stub.gotReq, req)
 	}
 	if resp.Result != "masked" {

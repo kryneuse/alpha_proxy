@@ -18,6 +18,7 @@ import (
 	"github.com/kryneuse/alpha_proxy/internal/contract"
 	"github.com/kryneuse/alpha_proxy/internal/middleware"
 	"github.com/kryneuse/alpha_proxy/internal/observability"
+	"github.com/kryneuse/alpha_proxy/internal/pii"
 )
 
 // fakeProcessor records calls and returns a configurable result or error.
@@ -315,6 +316,108 @@ func TestProcessPassesFieldsToProcessor(t *testing.T) {
 	}
 	if call.ConsumerID != "sys-a" {
 		t.Errorf("ConsumerID = %q, want sys-a", call.ConsumerID)
+	}
+}
+
+func TestProcessMaskKindsAbsent(t *testing.T) {
+	fake := &fakeProcessor{resp: contract.ProcessResponse{Result: "masked"}}
+	handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"hello","payload_id":"id-42"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	call, _ := fake.lastCall()
+	if call.MaskKindsSet {
+		t.Errorf("MaskKindsSet = true, want false")
+	}
+	if call.MaskKinds != nil {
+		t.Errorf("MaskKinds = %v, want nil", call.MaskKinds)
+	}
+}
+
+func TestProcessMaskKindsEmptyArray(t *testing.T) {
+	fake := &fakeProcessor{resp: contract.ProcessResponse{Result: "masked"}}
+	handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"hello","payload_id":"id-42","mask_kinds":[]}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	call, _ := fake.lastCall()
+	if !call.MaskKindsSet {
+		t.Errorf("MaskKindsSet = false, want true")
+	}
+	if call.MaskKinds == nil || len(call.MaskKinds) != 0 {
+		t.Errorf("MaskKinds = %v, want empty non-nil slice", call.MaskKinds)
+	}
+}
+
+func TestProcessMaskKindsList(t *testing.T) {
+	fake := &fakeProcessor{resp: contract.ProcessResponse{Result: "masked"}}
+	handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"hello","payload_id":"id-42","mask_kinds":["phone","email"]}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	call, _ := fake.lastCall()
+	if !call.MaskKindsSet {
+		t.Errorf("MaskKindsSet = false, want true")
+	}
+	if len(call.MaskKinds) != 2 || call.MaskKinds[0] != "phone" || call.MaskKinds[1] != "email" {
+		t.Errorf("MaskKinds = %v, want [phone email]", call.MaskKinds)
+	}
+}
+
+func TestProcessMaskKindsInvalidKind(t *testing.T) {
+	fake := &fakeProcessor{err: fmt.Errorf("wrapped: %w", pii.ErrInvalidMaskKind)}
+	handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"hello","payload_id":"id-42","mask_kinds":["unknown"]}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if rec.Body.String() != "invalid mask kind\n" {
+		t.Errorf("body = %q, want invalid mask kind", rec.Body.String())
+	}
+}
+
+func TestProcessMaskKindsPolicyRejected(t *testing.T) {
+	fake := &fakeProcessor{err: fmt.Errorf("wrapped: %w", pii.ErrPolicyRejected)}
+	handler := newTestHandler(fake, 1<<20, verifyAuthConfig())
+
+	req := httptest.NewRequest(http.MethodPost, "/process", strings.NewReader(`{"payload":"hello","payload_id":"id-42","mask_kinds":["email"]}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	if rec.Body.String() != "policy rejected\n" {
+		t.Errorf("body = %q, want policy rejected", rec.Body.String())
 	}
 }
 
