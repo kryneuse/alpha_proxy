@@ -1,0 +1,11 @@
+# Benchmark-only dependencies for the spaCy cheap-gate experiment.
+# These are NOT production runtime dependencies and must NOT be added to the
+# production Docker image or the main requirements.txt.
+#
+# Install into an isolated venv:
+#   python3 -m venv .venv-bench
+#   .venv-bench/bin/pip install -r requirements-bench.txt
+#   .venv-bench/bin/python -m spacy download ru_core_news_sm
+#   .venv-bench/bin/python -m spacy download ru_core_news_md
+#   .venv-bench/bin/python -m spacy download ru_core_news_lg
+spacy==3.8.16

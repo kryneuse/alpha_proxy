@@ -1,0 +1,891 @@
+{
+  "samples": [
+    {
+      "original": "сегодня хорошая погода на улице",
+      "residual": "сегодня хорошая погода на улице",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "конференция состоится в пятницу",
+      "residual": "конференция состоится в пятницу",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "мы обсудили план на следующий квартал",
+      "residual": "мы обсудили план на следующий квартал",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "отчёт готов и отправлен руководству",
+      "residual": "отчёт готов и отправлен руководству",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "встреча назначена на десять утра",
+      "residual": "встреча назначена на десять утра",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "проект завершён в срок",
+      "residual": "проект завершён в срок",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "команда работает над новой версией",
+      "residual": "команда работает над новой версией",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "документы подписаны",
+      "residual": "документы подписаны",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "заседание перенесено на следующую неделю",
+      "residual": "заседание перенесено на следующую неделю",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "результаты тестирования положительные",
+      "residual": "результаты тестирования положительные",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "мы получили ваше письмо",
+      "residual": "мы получили ваше письмо",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "благодарим за обращение",
+      "residual": "благодарим за обращение",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "заявка принята в обработку",
+      "residual": "заявка принята в обработку",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "статус заказа обновлён",
+      "residual": "статус заказа обновлён",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "оплата прошла успешно",
+      "residual": "оплата прошла успешно",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "доставка будет завтра",
+      "residual": "доставка будет завтра",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "номер вашего обращения 12345",
+      "residual": "номер вашего обращения 12345",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "код подтверждения отправлен",
+      "residual": "код подтверждения отправлен",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "мы свяжемся с вами позже",
+      "residual": "мы свяжемся с вами позже",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "спасибо за покупку",
+      "residual": "спасибо за покупку",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "4510 123456",
+      "residual": "4510 123456",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "4510 123456"
+      ]
+    },
+    {
+      "original": "паспорт 4510 123456",
+      "residual": "паспорт",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "4510 123456"
+      ]
+    },
+    {
+      "original": "серия 4510 номер 123456",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "4510 123456"
+      ]
+    },
+    {
+      "original": "7712 345678",
+      "residual": "7712 345678",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "7712 345678"
+      ]
+    },
+    {
+      "original": "водительское удостоверение 77 12 345678",
+      "residual": "водительское удостоверение",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "77 12 345678"
+      ]
+    },
+    {
+      "original": "7707083893",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "7707083893"
+      ]
+    },
+    {
+      "original": "ИНН 7707083893",
+      "residual": "ИНН",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "7707083893"
+      ]
+    },
+    {
+      "original": "4532 0151 1283 0366",
+      "residual": "4532 0151 1283 0366",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "4532 0151 1283 0366"
+      ]
+    },
+    {
+      "original": "номер карты 4532 0151 1283 0366",
+      "residual": "номер карты",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "4532 0151 1283 0366"
+      ]
+    },
+    {
+      "original": "+7 (912) 345-67-89",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "+7 (912) 345-67-89"
+      ]
+    },
+    {
+      "original": "телефон +7 (912) 345-67-89",
+      "residual": "телефон",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "+7 (912) 345-67-89"
+      ]
+    },
+    {
+      "original": "ivanov@example.com",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "ivanov@example.com"
+      ]
+    },
+    {
+      "original": "email ivanov@example.com",
+      "residual": "email",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "ivanov@example.com"
+      ]
+    },
+    {
+      "original": "15.03.1990",
+      "residual": "15.03.1990",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "15.03.1990"
+      ]
+    },
+    {
+      "original": "дата рождения 15.03.1990",
+      "residual": "дата рождения",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "15.03.1990"
+      ]
+    },
+    {
+      "original": "770-001",
+      "residual": "770-001",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "770-001"
+      ]
+    },
+    {
+      "original": "код подразделения 770-001",
+      "residual": "код подразделения",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "770-001"
+      ]
+    },
+    {
+      "original": "Иван Петров",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Иван Петров"
+      ]
+    },
+    {
+      "original": "клиент Иван Петров",
+      "residual": "клиент",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Иван Петров"
+      ]
+    },
+    {
+      "original": "Смирнова Анна Сергеевна",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Смирнова Анна Сергеевна"
+      ]
+    },
+    {
+      "original": "заявитель Смирнова Анна",
+      "residual": "заявитель",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Смирнова Анна"
+      ]
+    },
+    {
+      "original": "проживает по адресу г. Москва ул. Тверская д. 10",
+      "residual": "проживает по адресу",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "г. Москва ул. Тверская д. 10"
+      ]
+    },
+    {
+      "original": "адрес регистрации г. Казань ул. Баумана д. 7",
+      "residual": "адрес регистрации",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "г. Казань ул. Баумана д. 7"
+      ]
+    },
+    {
+      "original": "гражданство Российская Федерация",
+      "residual": "гражданство",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Российская Федерация"
+      ]
+    },
+    {
+      "original": "гражданин Казахстана",
+      "residual": "гражданин",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Казахстана"
+      ]
+    },
+    {
+      "original": "родился в городе Санкт-Петербург",
+      "residual": "родился в",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Санкт-Петербург"
+      ]
+    },
+    {
+      "original": "место рождения город Москва",
+      "residual": "место рождения",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Москва"
+      ]
+    },
+    {
+      "original": "CVV 123",
+      "residual": "CVV",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "123"
+      ]
+    },
+    {
+      "original": "пин-код 7305",
+      "residual": "пин-код",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "7305"
+      ]
+    },
+    {
+      "original": "держатель карты IVAN PETROV",
+      "residual": "держатель карты",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "IVAN PETROV"
+      ]
+    },
+    {
+      "original": "паспорт выдан ОВМ УМВД России",
+      "residual": "паспорт выдан",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "ОВМ УМВД России"
+      ]
+    },
+    {
+      "original": "код подразделения 452-013",
+      "residual": "код подразделения",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "452-013"
+      ]
+    },
+    {
+      "original": "водительские права 9901 234567",
+      "residual": "водительские права",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "9901 234567"
+      ]
+    },
+    {
+      "original": "ИНН физического лица 500100732259",
+      "residual": "ИНН физического лица",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "500100732259"
+      ]
+    },
+    {
+      "original": "номер счёта 40817810099910004312",
+      "residual": "номер счёта 40           0004312",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "40817810099910004312"
+      ]
+    },
+    {
+      "original": "паспорт 45 10 № 123456",
+      "residual": "паспорт",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "45 10 № 123456"
+      ]
+    },
+    {
+      "original": "серия 45 10, номер 123456",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "45 10, номер 123456"
+      ]
+    },
+    {
+      "original": "является гражданином Армении",
+      "residual": "является гражданином",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Армении"
+      ]
+    },
+    {
+      "original": "Гражданка Республики Беларусь",
+      "residual": "Гражданка",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Республики Беларусь"
+      ]
+    },
+    {
+      "original": "родился в 1990 году",
+      "residual": "родился в      году",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "1990"
+      ]
+    },
+    {
+      "original": "дата рождения 12 января 1985",
+      "residual": "дата рождения",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "12 января 1985"
+      ]
+    },
+    {
+      "original": "живет по адресу г. Новосибирск",
+      "residual": "",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "г. Новосибирск"
+      ]
+    },
+    {
+      "original": "зарегистрирован по адресу г. Екатеринбург",
+      "residual": "зарегистрирован по адресу",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "г. Екатеринбург"
+      ]
+    },
+    {
+      "original": "клиент Кузнецова Мария",
+      "residual": "клиент",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Кузнецова Мария"
+      ]
+    },
+    {
+      "original": "пациент Волков Дмитрий",
+      "residual": "пациент",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Волков Дмитрий"
+      ]
+    },
+    {
+      "original": "заёмщик Сидоров Алексей",
+      "residual": "заёмщик",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": [
+        "Сидоров Алексей"
+      ]
+    },
+    {
+      "original": "держатель полиса Петрова Анна",
+      "residual": "держатель полиса",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Петрова Анна"
+      ]
+    },
+    {
+      "original": "Абдуллаев Тимур Рашидович",
+      "residual": "Абдуллаев Тимур Рашидович",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Абдуллаев Тимур Рашидович"
+      ]
+    },
+    {
+      "original": "клиент Абдуллаев Тимур",
+      "residual": "клиент Абдуллаев Тимур",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Абдуллаев Тимур"
+      ]
+    },
+    {
+      "original": "проживает в деревне Малые Ключи",
+      "residual": "проживает в деревне Малые Ключи",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Малые Ключи"
+      ]
+    },
+    {
+      "original": "адрес: посёлок Сосновый Бор, улица Лесная",
+      "residual": "адрес: посёлок Сосновый Бор, улица Лесная",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Сосновый Бор, улица Лесная"
+      ]
+    },
+    {
+      "original": "родился в селе Верхние Поляны",
+      "residual": "родился в",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "Верхние Поляны"
+      ]
+    },
+    {
+      "original": "1234 567890",
+      "residual": "1234 567890",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "1234 567890"
+      ]
+    },
+    {
+      "original": "9876 543210",
+      "residual": "9876 543210",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "9876 543210"
+      ]
+    },
+    {
+      "original": "123456789012",
+      "residual": "123456789012",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "123456789012"
+      ]
+    },
+    {
+      "original": "1234567890",
+      "residual": "1234567890",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "1234567890"
+      ]
+    },
+    {
+      "original": "4111 1111 1111 1111",
+      "residual": "4111 1111 1111 1111",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "4111 1111 1111 1111"
+      ]
+    },
+    {
+      "original": "5555 5555 5555 4444",
+      "residual": "5555 5555 5555 4444",
+      "has_pii": 1,
+      "route": "LIKELY_PII",
+      "gold_pii": [
+        "5555 5555 5555 4444"
+      ]
+    },
+    {
+      "original": "код 123",
+      "residual": "код 123",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "123"
+      ]
+    },
+    {
+      "original": "номер 4567",
+      "residual": "номер 4567",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "4567"
+      ]
+    },
+    {
+      "original": "пароль 1234",
+      "residual": "пароль 1234",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "1234"
+      ]
+    },
+    {
+      "original": "код доступа 7305",
+      "residual": "код доступа 7305",
+      "has_pii": 1,
+      "route": "UNCERTAIN",
+      "gold_pii": [
+        "7305"
+      ]
+    },
+    {
+      "original": "офис компании находится по адресу г. Москва ул. Тверская д. 1",
+      "residual": "офис компании находится по адресу г. Москва ул. Тверская д. 1",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "магазин расположен по адресу г. Казань ул. Баумана д. 5",
+      "residual": "магазин расположен по адресу г. Казань ул. Баумана д. 5",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "служба поддержки 8 800 123 45 67",
+      "residual": "служба поддержки 8 800 123 45 67",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "горячая линия +7 (495) 123-45-67",
+      "residual": "горячая линия +7 (495) 123-45-67",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "наш email support@example.com",
+      "residual": "наш email support@example.com",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "отдел продаж sales@company.ru",
+      "residual": "отдел продаж sales@company.ru",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "Россия — крупнейшая страна мира",
+      "residual": "Россия — крупнейшая страна мира",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "Германия — страна в центре Европы",
+      "residual": "Германия — страна в центре Европы",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "Летим в Казахстан",
+      "residual": "Летим в Казахстан",
+      "has_pii": 0,
+      "route": "SAFE",
+      "gold_pii": null
+    },
+    {
+      "original": "карта метро 4532 0151 1283 0366",
+      "residual": "карта метро 4532 0151 1283 0366",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": null
+    },
+    {
+      "original": "транспортная карта 4916 1197 1130 4546",
+      "residual": "транспортная карта 4916 1197 1130 4546",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": null
+    },
+    {
+      "original": "номер заказа 1234567890",
+      "residual": "номер заказа 1234567890",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": null
+    },
+    {
+      "original": "артикул 4510123456",
+      "residual": "артикул 4510123456",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": null
+    },
+    {
+      "original": "код товара 770-001",
+      "residual": "код товара 770-001",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": null
+    },
+    {
+      "original": "код заявки 770-001",
+      "residual": "код заявки 770-001",
+      "has_pii": 0,
+      "route": "LIKELY_PII",
+      "gold_pii": null
+    },
+    {
+      "original": "аудитория 314",
+      "residual": "аудитория 314",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "кабинет 314",
+      "residual": "кабинет 314",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "конференция состоится 15.03.2025",
+      "residual": "конференция состоится 15.03.2025",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "встреча назначена на 20.04.2025",
+      "residual": "встреча назначена на 20.04.2025",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "Александр Сергеевич Пушкин — великий русский поэт",
+      "residual": "Александр Сергеевич Пушкин — великий русский поэт",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "Лев Николаевич Толстой написал роман",
+      "residual": "Лев Николаевич Толстой написал роман",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "Владимир Путин — президент России",
+      "residual": "Владимир Путин — президент России",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "Юрий Гагарин — первый космонавт",
+      "residual": "Юрий Гагарин — первый космонавт",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "Пётр Чайковский — великий композитор",
+      "residual": "Пётр Чайковский — великий композитор",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "код 123 от замка",
+      "residual": "код 123 от замка",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "PIN 1234 от телефона",
+      "residual": "PIN 1234 от телефона",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    },
+    {
+      "original": "код роутера 1234",
+      "residual": "код роутера 1234",
+      "has_pii": 0,
+      "route": "UNCERTAIN",
+      "gold_pii": null
+    }
+  ]
+}
