@@ -109,6 +109,21 @@ negative cases, and average latency. The dataset lives in
 go test ./internal/engine/ -bench=. -benchmem -run=^$
 ```
 
+## CI
+
+Continuous integration runs on GitHub Actions (`.github/workflows/ci.yml`). It
+triggers on pull requests, pushes to `main`, and manual `workflow_dispatch`.
+
+Checks performed:
+
+- Go: module verification and tidiness, `go test -race`, `go vet`, `go build`.
+- Lint: `golangci-lint` v2.13.2 over the whole repository.
+- Deployment validation: compose configs and the Grafana dashboard JSON.
+- Docker build: `api` and `ml` images (BuildKit cache, no push).
+
+ML models are **not** downloaded in CI; the ML image build only verifies that
+runtime dependencies install and the Dockerfile is valid.
+
 ## Extension points
 
 The architecture is designed so the following can be added without rewriting

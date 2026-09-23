@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Check modules are tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Test
+        run: go test -race ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build -trimpath ./cmd/server
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          args: ./...
+
+  deployment-validation:
+    name: Deployment validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate root compose
+        run: docker compose config --quiet
+
+      - name: Validate monitoring compose
+        run: docker compose -f monitoring/compose.yaml --env-file monitoring/.env.example config --quiet
+
+      - name: Validate dashboard JSON
+        run: python -m json.tool monitoring/grafana/dashboards/alpha-proxy.json
+
+      - name: Check dashboard datasource UID
+        run: |
+          if grep -q '\${DS_PROMETHEUS}' monitoring/grafana/dashboards/alpha-proxy.json; then
+            echo "error: dashboard still references \${DS_PROMETHEUS}" >&2
+            exit 1
+          fi
+          if ! grep -q '"uid": "alpha-proxy-overview"' monitoring/grafana/dashboards/alpha-proxy.json; then
+            echo "error: dashboard UID alpha-proxy-overview not found" >&2
+            exit 1
+          fi
+
+  docker-build:
+    name: Docker build (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: api
+            context: .
+            file: Dockerfile
+            image: alpha-proxy-api:ci
+            cache-scope: api
+          - name: ml
+            context: ./ml-service
+            file: ./ml-service/Dockerfile
+            image: alpha-proxy-ml:ci
+            cache-scope: ml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: false
+          tags: ${{ matrix.image }}
+          cache-from: type=gha,scope=${{ matrix.cache-scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
