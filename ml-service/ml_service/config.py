@@ -77,6 +77,10 @@ class Config:
     # but we enforce a hard cap to protect the service.
     max_chunk_chars: int = 100_000
 
+    # Batch load limits: max chunks per batch and max total text length.
+    batch_max_items: int = 100
+    batch_max_chars: int = 1_000_000
+
     llaim: ModelConfig = field(
         default_factory=lambda: ModelConfig(
             onnx_path=os.path.join(_DEFAULT_MODELS_DIR, "llaim-ru-legal-ner.onnx"),
@@ -104,13 +108,19 @@ class Config:
     def from_env(cls) -> "Config":
         """Build a Config from environment variables (optional overrides)."""
         models_dir = os.environ.get("ML_MODELS_DIR", _DEFAULT_MODELS_DIR)
+        num_workers = int(os.environ.get("ML_NUM_WORKERS", "4"))
         return cls(
             gate_threshold=float(os.environ.get("ML_GATE_THRESHOLD", "0.001")),
-            num_workers=int(os.environ.get("ML_NUM_WORKERS", "4")),
+            num_workers=num_workers,
             intra_op_threads=int(os.environ.get("ML_INTRA_OP_THREADS", "1")),
             inter_op_threads=int(os.environ.get("ML_INTER_OP_THREADS", "1")),
             grpc_port=int(os.environ.get("ML_GRPC_PORT", "50051")),
+            # ML_NUM_WORKERS drives the gRPC worker pool size.
+            grpc_max_workers=num_workers,
             model_version=os.environ.get("ML_MODEL_VERSION", "1.0.0"),
+            max_chunk_chars=int(os.environ.get("ML_MAX_CHUNK_CHARS", "100000")),
+            batch_max_items=int(os.environ.get("ML_BATCH_MAX_ITEMS", "100")),
+            batch_max_chars=int(os.environ.get("ML_BATCH_MAX_CHARS", "1000000")),
             llaim=ModelConfig(
                 onnx_path=os.path.join(models_dir, "llaim-ru-legal-ner.onnx"),
                 tokenizer_dir=os.path.join(models_dir, "llaim-ru-legal-ner"),

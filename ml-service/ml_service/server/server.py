@@ -23,6 +23,8 @@ def build_server(config: Config) -> grpc.Server:
         options=[
             ("grpc.max_send_message_length", config.grpc_max_message_length),
             ("grpc.max_receive_message_length", config.grpc_max_message_length),
+            # Limit concurrent RPCs to the worker pool size.
+            ("grpc.max_concurrent_streams", config.grpc_max_workers),
         ],
     )
     pb.add_PIIDetectorServicer_to_server(PIIDetectorService(detector), server)

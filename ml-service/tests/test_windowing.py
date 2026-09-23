@@ -48,9 +48,10 @@ def test_sliding_windows_offsets():
     win = windows[0]
     assert win.char_start == 0
     assert win.char_end == len(text)
-    # Offsets map back to the original text.
+    # Real tokens map back to the original text; special tokens have s == e.
     for s, e in win.offset_mapping:
-        assert text[s:e] != ""
+        if s != e:
+            assert text[s:e] != ""
 
 
 def test_sliding_windows_long_text():

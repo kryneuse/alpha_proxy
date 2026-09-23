@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from .cancellation import check_cancelled
 from .labels import GATE_ALLOWED_TYPES, GATE_IGNORED_TYPES
 from .onnx_model import OnnxTokenClassifier
 from .windowing import llaim_windows
@@ -62,6 +63,20 @@ class LlaimGate:
         self._stride = stride
         self._threshold = threshold
         self._id2label = self._load_id2label()
+        # Precompute label indices for the gate score (B/I per allowed type).
+        self._allowed_label_ids = self._precompute_allowed_ids()
+
+    def _precompute_allowed_ids(self) -> List[int]:
+        """Return label ids for B-<type> and I-<type> of allowed types."""
+        ids: List[int] = []
+        for native_type in GATE_ALLOWED_TYPES:
+            for prefix in ("B-", "I-"):
+                label = prefix + native_type
+                for i, lab in self._id2label.items():
+                    if lab == label:
+                        ids.append(i)
+                        break
+        return ids
 
     def _load_id2label(self) -> Dict[int, str]:
         # id2label is fixed by the model config; hardcode from config.json.
@@ -196,10 +211,17 @@ class LlaimGate:
         """Compute max over allowed types/tokens of P(B-type)+P(I-type).
 
         Only real tokens (non-padding, non-special) and only allowed types are
-        considered. Ignored types never enter the maximum.
+        considered. Ignored types never enter the maximum. Uses precomputed
+        label indices and vectorized NumPy ops.
         """
         probs = np.exp(logits - logits.max(-1, keepdims=True))
         probs = probs / probs.sum(-1, keepdims=True)
+
+        # Sum P(B-type)+P(I-type) across the precomputed allowed label ids.
+        allowed = probs[:, self._allowed_label_ids]
+        # Pair up (B,I) per type: reshape to (tokens, n_types, 2) and sum.
+        n_types = len(GATE_ALLOWED_TYPES)
+        paired = allowed.reshape(-1, n_types, 2).sum(-1)
 
         best = 0.0
         for tok_idx, (s, e) in enumerate(offset_mapping):
@@ -207,25 +229,12 @@ class LlaimGate:
             e = int(e)
             if s == e:
                 continue
-            for native_type in GATE_ALLOWED_TYPES:
-                b_id = self._label_id("B-" + native_type)
-                i_id = self._label_id("I-" + native_type)
-                p = 0.0
-                if b_id is not None:
-                    p += float(probs[tok_idx, b_id])
-                if i_id is not None:
-                    p += float(probs[tok_idx, i_id])
-                if p > best:
-                    best = p
+            m = float(paired[tok_idx].max())
+            if m > best:
+                best = m
         return best
 
-    def _label_id(self, label: str) -> Optional[int]:
-        for i, lab in self._id2label.items():
-            if lab == label:
-                return i
-        return None
-
-    def run(self, text: str) -> GateResult:
+    def run(self, text: str, context=None) -> GateResult:
         """Run the gate on a chunk of text."""
         t0 = time.perf_counter()
         all_spans: List[Dict] = []
@@ -240,25 +249,15 @@ class LlaimGate:
             max_length=self._max_length,
             stride=self._stride,
         ):
-            # win offsets are relative to the chunk; shift to the full text.
-            win_start = chunk_offset + win.char_start
-            win_end = chunk_offset + win.char_end
-            window_text = text[win_start:win_end]
-            enc = self._model.tokenize(
-                window_text,
-                return_offsets_mapping=True,
-                truncation=True,
-                max_length=self._max_length,
-                return_tensors="np",
-            )
-            logits = self._model.run(enc)
+            check_cancelled(context)
+            logits = self._model.run(win.inputs)
 
-            # offset_mapping is relative to window_text; shift to the chunk.
-            offset_mapping = enc["offset_mapping"][0]
-            spans = self._greedy_spans(window_text, logits[0], offset_mapping)
+            # offset_mapping is relative to the chunk; shift to the full text.
+            offset_mapping = win.offset_mapping
+            spans = self._greedy_spans(text, logits[0], offset_mapping)
             for sp in spans:
-                sp["start"] += win_start
-                sp["end"] += win_start
+                sp["start"] += chunk_offset
+                sp["end"] += chunk_offset
             all_spans.extend(spans)
 
             for sp in spans:

@@ -15,10 +15,17 @@ from ml_service.server.service import PIIDetectorService
 class _Ctx:
     def __init__(self):
         self.aborted = None
+        self._active = True
 
     def abort(self, code, details):
         self.aborted = (code, details)
         raise RuntimeError(f"abort {code} {details}")
+
+    def is_active(self):
+        return self._active
+
+    def time_remaining(self):
+        return 60.0
 
 
 @pytest.fixture(scope="module")

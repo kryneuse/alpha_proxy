@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+from .cancellation import check_cancelled
 from .labels import (
     RMR_NAME_COMPONENTS,
     RMR_NATIVE_TO_TARGET,
@@ -208,7 +209,7 @@ class RedMadRobotNer:
 
         return other_spans + merged_names
 
-    def run(self, text: str) -> NerResult:
+    def run(self, text: str, context=None) -> NerResult:
         """Run the main NER on a chunk of text."""
         t0 = time.perf_counter()
         all_spans: List[Dict] = []
@@ -219,22 +220,13 @@ class RedMadRobotNer:
             max_length=self._max_length,
             stride=self._stride,
         ):
-            window_text = text[win.char_start : win.char_end]
-            enc = self._model.tokenize(
-                window_text,
-                return_offsets_mapping=True,
-                truncation=True,
-                max_length=self._max_length,
-                return_tensors="np",
-            )
-            logits = self._model.run(enc)
+            check_cancelled(context)
+            logits = self._model.run(win.inputs)
 
-            # offset_mapping is relative to window_text; shift to the chunk.
-            offset_mapping = enc["offset_mapping"][0]
+            # offset_mapping is relative to the full text (rmr_windows
+            # tokenizes the whole chunk), so spans are already absolute.
+            offset_mapping = win.offset_mapping
             spans = self._decode_window(logits[0], offset_mapping)
-            for sp in spans:
-                sp["start"] += win.char_start
-                sp["end"] += win.char_start
             all_spans.extend(spans)
 
         # Merge overlapping spans of the same native type across windows.

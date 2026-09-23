@@ -1,8 +1,11 @@
 """gRPC service implementation for the PIIDetector contract."""
 from __future__ import annotations
 
+import threading
+
 import grpc
 
+from ..core.cancellation import CancelledError
 from ..core.detector import PIIDetector
 from ..core.types import BatchResult, ChunkResult
 from .. import proto as pb
@@ -52,6 +55,9 @@ class PIIDetectorService(pb.PIIDetectorServicer):
 
     def __init__(self, detector: PIIDetector) -> None:
         self._detector = detector
+        # Limit the number of concurrently processed batches to the worker pool
+        # size. Excess requests are rejected early with RESOURCE_EXHAUSTED.
+        self._semaphore = threading.BoundedSemaphore(detector._config.grpc_max_workers)
 
     def _validate_request(self, request) -> None:
         """Validate the request; raises ValueError with a message on failure."""
@@ -59,13 +65,30 @@ class PIIDetectorService(pb.PIIDetectorServicer):
             raise ValueError("batch_id must be non-empty")
         if not request.chunks:
             raise ValueError("chunks must contain at least one item")
+        if len(request.chunks) > self._detector._config.batch_max_items:
+            raise ValueError(
+                f"too many chunks: {len(request.chunks)} > "
+                f"{self._detector._config.batch_max_items}"
+            )
         seen = set()
+        total_chars = 0
         for chunk in request.chunks:
             if not chunk.chunk_id:
                 raise ValueError("chunk_id must be non-empty")
             if chunk.chunk_id in seen:
                 raise ValueError(f"duplicate chunk_id: {chunk.chunk_id}")
             seen.add(chunk.chunk_id)
+            if len(chunk.text) > self._detector._config.max_chunk_chars:
+                raise ValueError(
+                    f"chunk {chunk.chunk_id} too large: {len(chunk.text)} > "
+                    f"{self._detector._config.max_chunk_chars}"
+                )
+            total_chars += len(chunk.text)
+        if total_chars > self._detector._config.batch_max_chars:
+            raise ValueError(
+                f"batch text too large: {total_chars} > "
+                f"{self._detector._config.batch_max_chars}"
+            )
 
     def DetectBatch(self, request, context):
         try:
@@ -74,14 +97,28 @@ class PIIDetectorService(pb.PIIDetectorServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
+        # Early rejection when the worker pool is saturated.
+        if not self._semaphore.acquire(blocking=False):
+            context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "server overloaded")
+            return
+        try:
+            return self._process(request, context)
+        finally:
+            self._semaphore.release()
+
+    def _process(self, request, context):
         offset_unit = request.offset_unit
         if offset_unit == pb.OffsetUnit.OFFSET_UNIT_UNSPECIFIED:
             offset_unit = pb.OffsetUnit.OFFSET_UNIT_UNICODE_CODE_POINTS
 
         chunks = [(c.chunk_id, c.text) for c in request.chunks]
-        batch: BatchResult = self._detector.detect_batch(
-            request.batch_id, "unicode_code_points", chunks
-        )
+        try:
+            batch: BatchResult = self._detector.detect_batch(
+                request.batch_id, "unicode_code_points", chunks, context=context
+            )
+        except CancelledError:
+            context.abort(grpc.StatusCode.CANCELLED, "request cancelled")
+            return
 
         response = pb.DetectBatchResponse(
             batch_id=batch.batch_id,
