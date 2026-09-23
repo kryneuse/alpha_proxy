@@ -10,6 +10,7 @@ venv/
 
 # Models (large binaries, downloaded/exported)
 models/*.onnx
+models/*.onnx.data
 models/*/model.safetensors
 models/*/tokenizer.json
 models/*/config.json
