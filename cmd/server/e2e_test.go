@@ -174,7 +174,11 @@ func postProcessWithMaskKinds(t *testing.T, url, payload, payloadID string, mask
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close response body: %v", err)
+		}
+	}()
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
