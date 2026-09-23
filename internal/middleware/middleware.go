@@ -21,9 +21,9 @@ import (
 // are left untouched.
 func Recover(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
+		defer func(ctx context.Context) {
 			if recover() != nil {
-				if meta := requestmeta.From(r.Context()); meta != nil {
+				if meta := requestmeta.From(ctx); meta != nil {
 					meta.ErrorClass = "panic"
 				}
 				if hw, ok := w.(headerWritten); ok && hw.HeaderWritten() {
@@ -31,7 +31,7 @@ func Recover(next http.Handler) http.Handler {
 				}
 				http.Error(w, "internal error", http.StatusInternalServerError)
 			}
-		}()
+		}(r.Context())
 		next.ServeHTTP(w, r)
 	})
 }

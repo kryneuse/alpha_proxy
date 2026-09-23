@@ -57,16 +57,17 @@ func Serve(ctx context.Context, srv Server, listener net.Listener, readiness Rea
 		readiness.SetReady(false)
 		return normalizeServeResult(serveErr)
 	case <-ctx.Done():
-		return gracefulShutdown(srv, readiness, serveDone, shutdownTimeout)
+		return gracefulShutdown(context.WithoutCancel(ctx), srv, readiness, serveDone, shutdownTimeout)
 	}
 }
 
 // gracefulShutdown flips readiness off, drains in-flight requests with a fresh
-// timeout context and, if Shutdown fails, force-closes the server.
-func gracefulShutdown(srv Server, readiness Readiness, serveDone <-chan error, shutdownTimeout time.Duration) error {
+// timeout context derived from parent and, if Shutdown fails, force-closes the
+// server. parent must not be cancelled so the shutdown context starts active.
+func gracefulShutdown(parent context.Context, srv Server, readiness Readiness, serveDone <-chan error, shutdownTimeout time.Duration) error {
 	readiness.SetReady(false)
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(parent, shutdownTimeout)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

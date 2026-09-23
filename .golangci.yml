@@ -1,0 +1,40 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - bidichk
+    - bodyclose
+    - contextcheck
+    - errcheck
+    - errorlint
+    - gosec
+    - govet
+    - ineffassign
+    - loggercheck
+    - nilerr
+    - noctx
+    - nolintlint
+    - promlinter
+    - sloglint
+    - staticcheck
+    - unused
+  exclusions:
+    generated: strict
+    rules:
+      - path: _test\.go
+        linters:
+          - noctx
+
+      - path: _test\.go
+        text: "G(101|112|115):"
+        linters:
+          - gosec
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -37,15 +37,15 @@ func startTestServer(t *testing.T, srv *fakeServer) (mlv1.PIIDetectorClient, fun
 		_ = gs.Serve(lis)
 	}()
 
-	ctx := context.Background()
-	conn, err := grpc.DialContext(ctx, "bufnet",
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
 		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 			return lis.Dial()
 		}),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
-		t.Fatalf("grpc.DialContext returned error: %v", err)
+		t.Fatalf("grpc.NewClient returned error: %v", err)
 	}
 
 	cleanup := func() {

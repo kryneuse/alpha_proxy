@@ -108,6 +108,7 @@ func TestInstrumentedProcessorUnavailableWrapped(t *testing.T) {
 	if !errors.Is(err, contract.ErrUnavailable) {
 		t.Fatalf("Process() error = %v, want errors.Is ErrUnavailable", err)
 	}
+	//nolint:errorlint // Identity comparison verifies that instrumentation preserves the exact error value.
 	if err != wrapped {
 		t.Error("Process() returned a different error value")
 	}

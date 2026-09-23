@@ -35,7 +35,9 @@ func BenchmarkCascadeSafe(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.Run(ctx, "сегодня хорошая погода")
+		if _, err := c.Run(ctx, "сегодня хорошая погода"); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -44,6 +46,8 @@ func BenchmarkCascadeUncertain(b *testing.B) {
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.Run(ctx, benchChunk)
+		if _, err := c.Run(ctx, benchChunk); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
