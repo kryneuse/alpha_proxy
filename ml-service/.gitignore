@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtual env
+.venv/
+venv/
+
+# Models (large binaries, downloaded/exported)
+models/*.onnx
+models/*/model.safetensors
+models/*/tokenizer.json
+models/*/config.json
+models/*/tokenizer_config.json
+models/*/README.md
+models/*/LICENSE
+models/*/.gitattributes
+models/*/.cache/
+models/*/*.png
+models/*/training_args.bin
+models/*/training_info.json
+
+# Keep the manifest and the author's reference script
+!models/manifest.json
+!models/*/llaim_ner.py
+
+# Test / build artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
