@@ -1,0 +1,46 @@
+{
+  "models": {
+    "llaim_gate": {
+      "hf_id": "LLAIMlegal/ru-legal-ner",
+      "revision": "924a4b1912ec6e55a4be959cab215ad8ff32a750",
+      "base_model": "cointegrated/rubert-tiny2",
+      "onnx": {
+        "file": "llaim-ru-legal-ner.onnx",
+        "quantization": "fp32",
+        "sha256": "4ebe3f3954fb85413c22dbc24eda5b5b1adc4bc82f573ace8f845a5493b3102a"
+      },
+      "source_weights": {
+        "file": "llaim-ru-legal-ner/model.safetensors",
+        "sha256": "84999594f1e4f5638e1940f5fa5473cceae5c2664e5c8028b827ab02928c89c4"
+      }
+    },
+    "redmadrobot_ner": {
+      "hf_id": "redmadrobot-rnd/rubert-base-pii-ner",
+      "revision": "c802e8cd26f85d1cf920973ea6f83965a0618d63",
+      "base_model": "ai-forever/ruBert-base",
+      "onnx": {
+        "file": "redmadrobot-rubert-pii-ner-int8.onnx",
+        "quantization": "dynamic_int8_qint8_per_channel",
+        "sha256": "5232be461203a7605e80c50a09e894147f88f1db8e349d956d6449f7335260de"
+      },
+      "onnx_fp32_reference": {
+        "file": "redmadrobot-rubert-pii-ner-fp32.onnx",
+        "quantization": "fp32",
+        "sha256": "497a8e616a33d62e7f1983898059ed64132500dba3f56e55918a544c00c9c237"
+      },
+      "source_weights": {
+        "file": "redmadrobot-rubert-pii-ner/model.safetensors",
+        "sha256": "2b9510cd99101c05800c3b4bcaeaebb26d285aa3152e49bea09dc5c2a38d4b16"
+      }
+    }
+  },
+  "export": {
+    "onnx_opset": 14,
+    "dynamic_axes": ["batch", "seq"],
+    "redmadrobot_int8": {
+      "weight_type": "QInt8",
+      "per_channel": true,
+      "op_types": ["MatMul", "Gemm"]
+    }
+  }
+}
