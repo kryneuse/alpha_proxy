@@ -24,6 +24,19 @@ const (
 	CVV                 Type = "CVV"
 	PIN                 Type = "PIN"
 	CARDHOLDER_NAME     Type = "CARDHOLDER_NAME"
+	// Новые типы для V2 (NER v14a). COUNTRY/REGION/DISTRICT — отдельные
+	// адресные компоненты; DATE_OF_BIRTH соответствует BIRTH_DATE, а
+	// PASSPORT_ISSUE_DATE уже существует.
+	COUNTRY  Type = "COUNTRY"
+	REGION   Type = "REGION"
+	DISTRICT Type = "DISTRICT"
+	// Адресные компоненты, которые NER v14a выдаёт отдельно от ADDRESS.
+	// Сохраняются до построения плана замен, чтобы не терять покрытие.
+	CITY       Type = "CITY"
+	STREET     Type = "STREET"
+	HOUSE      Type = "HOUSE"
+	APARTMENT  Type = "APARTMENT"
+	POSTAL_CODE Type = "POSTAL_CODE"
 )
 
 // AllTypes returns every supported entity type.
@@ -32,6 +45,7 @@ func AllTypes() []Type {
 		FULL_NAME, BIRTH_DATE, BIRTH_PLACE, PASSPORT, CITIZENSHIP,
 		PASSPORT_ISSUER, DEPARTMENT_CODE, PASSPORT_ISSUE_DATE, DRIVER_LICENSE,
 		ADDRESS, EMAIL, PHONE, INN, CARD_NUMBER, CVV, PIN, CARDHOLDER_NAME,
+		COUNTRY, REGION, DISTRICT, CITY, STREET, HOUSE, APARTMENT, POSTAL_CODE,
 	}
 }
 

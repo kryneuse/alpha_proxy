@@ -38,6 +38,11 @@ type RequestItem struct {
 	// независимо и его координаты считаются относительно его собственного
 	// начала.
 	Text string `json:"text"`
+
+	// GateText — текст того же участка payload после маскирования правилами
+	// (byte-preserving). Используется только как вход обученного гейта в V2.
+	// Байтовая длина GateText равна байтовой длине Text. Для V1 не задаётся.
+	GateText string `json:"gate_text,omitempty"`
 }
 
 // BatchResponse — ответ ML-сервиса на BatchRequest.
@@ -96,5 +101,12 @@ type MLEntity struct {
 // Client — абстракция над транспортом к ML-сервису. Реализация позже может
 // использовать HTTP или gRPC, но для вызывающего кода это не имеет значения.
 type Client interface {
+	// ProcessBatch обрабатывает batch через старый RPC DetectBatch (V1).
+	// В новой конфигурации сервис может отклонять его с FAILED_PRECONDITION.
 	ProcessBatch(ctx context.Context, req BatchRequest) (BatchResponse, error)
+
+	// ProcessBatchV2 обрабатывает batch через RPC DetectBatchV2. Семантика
+	// ответа — координаты сущностей относительно original_text (RequestItem.Text).
+	// GateText (RequestItem.GateText) передаётся как вход обученного гейта.
+	ProcessBatchV2(ctx context.Context, req BatchRequest) (BatchResponse, error)
 }

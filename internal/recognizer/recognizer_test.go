@@ -71,13 +71,23 @@ func TestCardNumberRecognizer(t *testing.T) {
 
 func TestCvvRecognizer(t *testing.T) {
 	rec := NewCvvRecognizer()
-	// Bare 3 digits are candidates but low score; context decides.
+	// A 3-digit value bound to a signature is a CVV.
 	spans := findSpans(t, rec, "CVV 123")
 	if len(spans) != 1 {
-		t.Fatalf("expected 1 CVV candidate, got %d", len(spans))
+		t.Fatalf("expected 1 CVV, got %d", len(spans))
 	}
-	if spans[0].Score > 0.5 {
-		t.Errorf("bare CVV candidate should have low score, got %f", spans[0].Score)
+	if spans[0].Score < 0.5 {
+		t.Errorf("signature-bound CVV should have high score, got %f", spans[0].Score)
+	}
+	// A bare 3-digit number without a signature is not a CVV.
+	spans = findSpans(t, rec, "123")
+	if len(spans) != 0 {
+		t.Errorf("expected 0 CVV for bare number, got %d", len(spans))
+	}
+	// A fragment of a longer number is not a CVV even with a signature.
+	spans = findSpans(t, rec, "CVV 4821")
+	if len(spans) != 0 {
+		t.Errorf("expected 0 CVV for longer number, got %d", len(spans))
 	}
 }
 
@@ -195,6 +205,45 @@ func TestAddressRecognizer(t *testing.T) {
 	spans = findSpans(t, rec, "Москва")
 	if len(spans) != 0 {
 		t.Errorf("expected 0 for bare city, got %d", len(spans))
+	}
+}
+
+func TestAddressRecognizerMultiple(t *testing.T) {
+	rec := NewAddressRecognizer(nil)
+	text := "Адрес проживания: г. Казань, ул. Лесная, д. 7\nАдрес регистрации: г. Москва, ул. Мира, д. 8"
+	spans := findSpans(t, rec, text)
+	if len(spans) != 2 {
+		t.Fatalf("expected 2 addresses, got %d", len(spans))
+	}
+	if spans[0].Text != "г. Казань, ул. Лесная, д. 7" {
+		t.Errorf("unexpected first address %q", spans[0].Text)
+	}
+	if spans[1].Text != "г. Москва, ул. Мира, д. 8" {
+		t.Errorf("unexpected second address %q", spans[1].Text)
+	}
+}
+
+func TestAddressRecognizerStopsAtNextField(t *testing.T) {
+	rec := NewAddressRecognizer(nil)
+	text := "Адрес: г. Казань, ул. Лесная, д. 7; ИНН: 7707083893"
+	spans := findSpans(t, rec, text)
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 address, got %d", len(spans))
+	}
+	if spans[0].Text != "г. Казань, ул. Лесная, д. 7" {
+		t.Errorf("unexpected address %q", spans[0].Text)
+	}
+}
+
+func TestAddressRecognizerValueOnNextLine(t *testing.T) {
+	rec := NewAddressRecognizer(nil)
+	text := "Адрес проживания:\nг. Казань, ул. Лесная, д. 7"
+	spans := findSpans(t, rec, text)
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 address, got %d", len(spans))
+	}
+	if spans[0].Text != "г. Казань, ул. Лесная, д. 7" {
+		t.Errorf("unexpected address %q", spans[0].Text)
 	}
 }
 

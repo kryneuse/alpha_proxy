@@ -1,31 +1,28 @@
 // Package cascade implements the routing cascade:
 //
-//	chunk -> Rule Engine -> residual -> Heuristic Gate -> routing
+//	payload -> Rule Engine (whole text) -> rule_entities + residual
+//	       -> chunk original -> (original_text, gate_text) pairs -> ML
 //
-// The gate routes to SAFE / UNCERTAIN / LIKELY_PII. UNCERTAIN consults a cheap
-// ML classifier; LIKELY_PII goes straight to an expensive ML extractor. The
-// interfaces for the ML components are defined here so real models can be
-// plugged in later without changing the cascade.
+// The gate and NER both run inside the Python ML service in a single RPC. Go
+// does not run a separate gate: it sends each (original_text, gate_text) pair
+// and Python decides whether NER is needed. A positive gate means "the residual
+// may still contain PII"; it returns no entities. On a negative gate the
+// rule-found PII stays in the result.
 package cascade
 
 import (
 	"context"
 
 	"github.com/kryneuse/alpha_proxy/internal/entity"
-	"github.com/kryneuse/alpha_proxy/internal/gate"
 	"github.com/kryneuse/alpha_proxy/internal/residual"
 )
 
-// CheapClassifier is a cheap ML classifier that decides whether a residual
-// text may contain PII. It returns a score in [0,1].
-type CheapClassifier interface {
-	HasPII(ctx context.Context, text string) (score float64, err error)
-}
-
-// ExpensiveExtractor is an expensive ML extractor that detects PII entities
-// in a residual text.
+// ExpensiveExtractor is the ML extractor. It receives the original text of a
+// chunk and the byte-preserving masked residual (gate_text) of the same chunk.
+// The gate and NER run inside the ML service; the extractor returns entities
+// with offsets relative to original.
 type ExpensiveExtractor interface {
-	Detect(ctx context.Context, text string) ([]entity.Entity, error)
+	Detect(ctx context.Context, original, gate string) ([]entity.Entity, error)
 }
 
 // RuleEngine is the deterministic rule engine used as the first stage.
@@ -33,111 +30,40 @@ type RuleEngine interface {
 	Analyze(text string) []entity.Entity
 }
 
-// Result is the final output of the cascade.
-type Result struct {
-	// Entities is the merged set of rule + ML entities.
-	Entities []entity.Entity
-	// Residual is the residual text after rule spans were masked.
-	Residual string
-	// Route is the gate routing decision.
-	Route gate.Route
-	// GateScore is the heuristic gate score.
-	GateScore float64
-	// CheapInvoked reports whether the cheap classifier was called.
-	CheapInvoked bool
-	// ExpensiveInvoked reports whether the expensive extractor was called.
-	ExpensiveInvoked bool
-}
-
-// Cascade runs the full routing pipeline.
+// Cascade runs the rule engine on the whole text and the ML extractor on
+// (original_text, gate_text) chunk pairs.
 type Cascade struct {
 	engine    RuleEngine
-	gate      *gate.Gate
-	cheap     CheapClassifier
 	expensive ExpensiveExtractor
 }
 
-// New builds a cascade. cheap is an optional future optimization; when nil,
-// UNCERTAIN routes straight to the expensive extractor (the Python ML service
-// runs its own internal classifier inside DetectBatch). expensive may be nil;
-// if a route requires it and it is nil, the cascade fails closed.
-func New(engine RuleEngine, g *gate.Gate, cheap CheapClassifier, expensive ExpensiveExtractor) *Cascade {
+// New builds a cascade. expensive may be nil; if a chunk requires it and it is
+// nil, the cascade fails closed.
+func New(engine RuleEngine, expensive ExpensiveExtractor) *Cascade {
 	return &Cascade{
 		engine:    engine,
-		gate:      g,
-		cheap:     cheap,
 		expensive: expensive,
 	}
 }
 
-// Run executes the cascade on a chunk and returns the merged result.
-func (c *Cascade) Run(ctx context.Context, chunk string) (Result, error) {
-	// 1. Run the rule engine.
-	ruleEntities := c.engine.Analyze(chunk)
-
-	// 2. Build the residual text (rule spans masked with spaces).
-	residualText := residual.Build(chunk, ruleEntities)
-
-	// 3. Run the heuristic gate.
-	decision := c.gate.Evaluate(residualText)
-
-	res := Result{
-		Entities:  ruleEntities,
-		Residual:  residualText,
-		Route:     decision.Route,
-		GateScore: decision.Score,
-	}
-
-	switch decision.Route {
-	case gate.SAFE:
-		// No further analysis.
-		return res, nil
-
-	case gate.UNCERTAIN:
-		// Consult the cheap classifier if configured. When cheap is nil, route
-		// straight to the expensive extractor: the Python ML service runs its
-		// own internal classifier inside DetectBatch.
-		if c.cheap == nil {
-			return c.runExpensive(ctx, res)
-		}
-		res.CheapInvoked = true
-		score, err := c.cheap.HasPII(ctx, residualText)
-		if err != nil {
-			// Fail closed: route to the expensive extractor.
-			return c.runExpensive(ctx, res)
-		}
-		if score < 0.5 {
-			// Cheap negative: residual considered clean.
-			return res, nil
-		}
-		// Cheap positive: run the expensive extractor.
-		return c.runExpensive(ctx, res)
-
-	case gate.LIKELY_PII:
-		// Skip the cheap classifier, run the expensive extractor directly.
-		return c.runExpensive(ctx, res)
-
-	default:
-		return res, errFailClosed("unknown gate route: " + string(decision.Route))
-	}
+// AnalyzeRules runs the rule engine on the whole text and returns the rule
+// entities and the residual text (byte-preserving masked).
+func (c *Cascade) AnalyzeRules(text string) ([]entity.Entity, string) {
+	ruleEntities := c.engine.Analyze(text)
+	residualText := residual.Build(text, ruleEntities)
+	return ruleEntities, residualText
 }
 
-// runExpensive runs the expensive extractor and merges its entities with the
-// rule entities.
-func (c *Cascade) runExpensive(ctx context.Context, res Result) (Result, error) {
+// DetectChunk runs the ML extractor on a (original_text, gate_text) pair and
+// returns ML entities with offsets relative to original.
+func (c *Cascade) DetectChunk(ctx context.Context, original, gate string) ([]entity.Entity, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if c.expensive == nil {
-		return res, errFailClosed("expensive extractor unavailable")
+		return nil, errFailClosed("expensive extractor unavailable")
 	}
-	res.ExpensiveInvoked = true
-	mlEntities, err := c.expensive.Detect(ctx, res.Residual)
-	if err != nil {
-		return res, err
-	}
-	// Merge rule + ML entities. The resolver/deduplication is applied by the
-	// caller or a shared resolver; here we concatenate and let the caller
-	// resolve overlaps. For now, append ML entities.
-	res.Entities = append(res.Entities, mlEntities...)
-	return res, nil
+	return c.expensive.Detect(ctx, original, gate)
 }
 
 // errFailClosed is a sentinel error for fail-closed situations.

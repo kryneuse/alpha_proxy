@@ -1,9 +1,7 @@
-"""Tests for thread-safe concurrent detection."""
-import os
-import sys
+"""Concurrent adaptive inference preserves IDs, spans and pool bounds."""
 from concurrent.futures import ThreadPoolExecutor
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -11,26 +9,25 @@ from ml_service.config import Config
 from ml_service.core.detector import PIIDetector
 
 
-@pytest.fixture(scope="module")
-def detector():
-    return PIIDetector(Config())
-
-
-def test_concurrent_detection(detector):
-    """Multiple threads must safely share the detector (thread-local tokenizers)."""
-
-    def run(i):
-        text = f"Иванов Пётр {i}, тел. +7 999 123-45-67, email ivanov{i}@mail.ru"
-        res = detector.detect_chunk(f"c{i}", text)
-        return i, res.audit.gate_open, len(res.entities)
-
-    # Warm up (loads thread-local tokenizers).
-    run(0)
-
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = [pool.submit(run, i) for i in range(1, 9)]
-        results = [f.result() for f in futures]
-
-    for i, gate_open, n in results:
-        assert gate_open is True, f"chunk {i}: gate should be open"
-        assert n >= 1, f"chunk {i}: expected at least one entity"
+def test_concurrent_real_models():
+    cfg = replace(Config(), quality_queue=0, spacy_queue=128)
+    if not (Path(cfg.ner.dir)/'model.int8.onnx').exists():
+        pytest.skip('Quality artifacts not installed')
+    detector = PIIDetector(cfg)
+    try:
+        def run(i):
+            text = f'Иванов Пётр Сергеевич, email sample{i}@example.com.'
+            result = detector.detect_chunk_v2(str(i),text,text)
+            assert result.chunk_id == str(i)
+            assert result.error_code == 'NONE'
+            assert result.entities
+            assert all(0 <= e.start < e.end <= len(text) for e in result.entities)
+            return result.audit.backend
+        with ThreadPoolExecutor(max_workers=12) as pool:
+            routes = list(pool.map(run, range(48)))
+        assert 'quality' in routes and 'spacy_sm' in routes
+        stats = detector.scheduler.snapshot()
+        assert stats['pending'] == {'quality':0,'spacy_sm':0}
+        assert sum(stats['counters'].get('completed_'+r,0) for r in ('quality','spacy_sm')) == 48
+    finally:
+        detector.close()

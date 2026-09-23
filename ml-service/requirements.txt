@@ -1,15 +1,6 @@
-# Runtime dependencies for the ML PII detection service.
-# Python 3.9+ (tested on 3.9.6).
-# PyTorch is only required for model export/verification, not for serving.
-onnxruntime==1.19.2
-transformers==4.57.6
-tokenizers==0.22.2
-numpy==2.0.2
-grpcio==1.80.0
+# Adaptive or quality+spaCy serving, Python 3.12, CPU only.
+-r requirements-spacy.txt
+onnxruntime==1.30.0
+tokenizers==0.23.2
+# Proto generation only:
 grpcio-tools==1.80.0
-protobuf==6.33.6
-huggingface-hub==0.36.2
-
-# Export / verification only (not needed at runtime):
-# torch==2.8.0
-# onnx==1.19.1

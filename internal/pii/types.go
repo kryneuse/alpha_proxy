@@ -29,6 +29,10 @@ const (
 	PIIKindCVV              PIIKind = "cvv"
 	PIIKindPIN              PIIKind = "pin"
 	PIIKindPostalCode       PIIKind = "postal_code"
+	// Новые типы для V2 (NER v14a): отдельные адресные компоненты.
+	PIIKindCountry  PIIKind = "country"
+	PIIKindRegion   PIIKind = "region"
+	PIIKindDistrict PIIKind = "district"
 )
 
 type Source string

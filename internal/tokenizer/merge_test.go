@@ -228,8 +228,14 @@ func TestCombinePlansPartialOverlap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CombinePlans returned error: %v", err)
 	}
-	if len(plan) != 1 {
-		t.Fatalf("expected 1 replacement for partially overlapping spans, got %d", len(plan))
+	if len(plan) != 2 {
+		t.Fatalf("expected 2 replacements for partially overlapping spans, got %d", len(plan))
+	}
+	if plan[0].Start != 0 || plan[0].End != 38 {
+		t.Fatalf("expected first replacement to cover [0:38], got %+v", plan[0])
+	}
+	if plan[1].Start != 38 || plan[1].End != 51 {
+		t.Fatalf("expected second replacement to cover [38:51], got %+v", plan[1])
 	}
 }
 
@@ -434,7 +440,7 @@ func TestCombinePlansCancelledContextDuringOverlapResolution(t *testing.T) {
 	// next candidate pass or the selected-overlap check.
 	ctx := &cancelAfterCalls{remaining: 2}
 
-	_, err := resolveOverlaps(ctx, replacements)
+	_, err := resolveOverlaps(ctx, text, replacements)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}

@@ -6,3 +6,17 @@ __pycache__/
 
 # Load test results
 loadtest/results/
+# Local adaptive service: binaries, generated API keys and process logs
+.runtime/
+
+.venv-adaptive/
+:memory:.ses
+
+# Local environments, credentials and model artifacts
+.venv*/
+.kilo/
+.env
+.env.*
+!.env.example
+/ml-service/models/*
+!/ml-service/models/manifest.json

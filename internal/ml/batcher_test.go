@@ -24,6 +24,10 @@ func (f *fakeClient) ProcessBatch(_ context.Context, req BatchRequest) (BatchRes
 	return f.resp, f.err
 }
 
+func (f *fakeClient) ProcessBatchV2(_ context.Context, req BatchRequest) (BatchResponse, error) {
+	return f.ProcessBatch(context.Background(), req)
+}
+
 func (f *fakeClient) requestCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -51,6 +55,10 @@ func (r *recordingClient) ProcessBatch(_ context.Context, req BatchRequest) (Bat
 	r.reqs = append(r.reqs, req)
 	r.mu.Unlock()
 	return r.respFn(req), nil
+}
+
+func (r *recordingClient) ProcessBatchV2(_ context.Context, req BatchRequest) (BatchResponse, error) {
+	return r.ProcessBatch(context.Background(), req)
 }
 
 func (r *recordingClient) requestCount() int {
@@ -325,6 +333,12 @@ func (b *blockingClient) ProcessBatch(_ context.Context, _ BatchRequest) (BatchR
 	return BatchResponse{}, nil
 }
 
+func (b *blockingClient) ProcessBatchV2(_ context.Context, _ BatchRequest) (BatchResponse, error) {
+	b.once.Do(func() { close(b.started) })
+	<-b.release
+	return BatchResponse{}, nil
+}
+
 func TestBatcherCancelledContext(t *testing.T) {
 	fc := &fakeClient{resp: BatchResponse{}}
 	cfg := DefaultBatchConfig()
@@ -390,6 +404,10 @@ func (echoClient) ProcessBatch(_ context.Context, req BatchRequest) (BatchRespon
 	}, nil
 }
 
+func (echoClient) ProcessBatchV2(_ context.Context, req BatchRequest) (BatchResponse, error) {
+	return echoClient{}.ProcessBatch(context.Background(), req)
+}
+
 func TestBatcherDoubleClose(t *testing.T) {
 	fc := &fakeClient{resp: BatchResponse{}}
 	cfg := DefaultBatchConfig()
@@ -421,6 +439,12 @@ type blockingCtxClient struct {
 }
 
 func (b *blockingCtxClient) ProcessBatch(ctx context.Context, _ BatchRequest) (BatchResponse, error) {
+	b.once.Do(func() { close(b.started) })
+	<-ctx.Done()
+	return BatchResponse{}, ctx.Err()
+}
+
+func (b *blockingCtxClient) ProcessBatchV2(ctx context.Context, _ BatchRequest) (BatchResponse, error) {
 	b.once.Do(func() { close(b.started) })
 	<-ctx.Done()
 	return BatchResponse{}, ctx.Err()

@@ -1,0 +1,8 @@
+# CPU runtime, Python 3.12. No base-model download required.
+spacy==3.8.16
+thinc==8.3.13
+numpy==2.4.6
+pymorphy3==2.0.6
+pymorphy3-dicts-ru==2.4.417150.4580142
+grpcio==1.80.0
+protobuf==6.33.6

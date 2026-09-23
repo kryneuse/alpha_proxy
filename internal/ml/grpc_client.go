@@ -8,7 +8,10 @@ import (
 	"unicode/utf8"
 
 	mlv1 "github.com/kryneuse/alpha_proxy/gen/ml/v1"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
 	"github.com/kryneuse/alpha_proxy/internal/pii"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // grpcClient адаптирует сгенерированный gRPC клиент к internal/ml.Client.
@@ -48,6 +51,44 @@ func (g *grpcClient) ProcessBatch(ctx context.Context, req BatchRequest) (BatchR
 
 	grpcResp, err := g.client.DetectBatch(ctx, grpcReq)
 	if err != nil {
+		return BatchResponse{}, err
+	}
+
+	return fromGRPCResponse(req, grpcResp)
+}
+
+// ProcessBatchV2 преобразует BatchRequest в mlv1.DetectBatchV2Request (пары
+// original_text/gate_text), вызывает DetectBatchV2, проверяет ответ и
+// преобразует его обратно в BatchResponse. Координаты сущностей в ответе
+// считаются относительно original_text (RequestItem.Text).
+func (g *grpcClient) ProcessBatchV2(ctx context.Context, req BatchRequest) (BatchResponse, error) {
+	offsetUnit, err := toOffsetUnit(req.OffsetUnit)
+	if err != nil {
+		return BatchResponse{}, err
+	}
+
+	grpcReq := &mlv1.DetectBatchV2Request{
+		BatchId:    req.BatchID,
+		OffsetUnit: offsetUnit,
+		Chunks:     make([]*mlv1.ChunkV2, 0, len(req.Items)),
+	}
+	for _, item := range req.Items {
+		gateText := item.GateText
+		grpcReq.Chunks = append(grpcReq.Chunks, &mlv1.ChunkV2{
+			ChunkId:      item.ChunkID,
+			OriginalText: item.Text,
+			GateText:     &gateText,
+		})
+	}
+
+	grpcResp, err := g.client.DetectBatchV2(ctx, grpcReq)
+	if err != nil {
+		switch status.Code(err) {
+		case codes.ResourceExhausted, codes.Unavailable:
+			return BatchResponse{}, errors.Join(contract.ErrUnavailable, err)
+		case codes.DeadlineExceeded:
+			return BatchResponse{}, errors.Join(context.DeadlineExceeded, err)
+		}
 		return BatchResponse{}, err
 	}
 

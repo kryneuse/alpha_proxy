@@ -25,20 +25,21 @@ func NewExtractor(batcher *Batcher) (*Extractor, error) {
 	return &Extractor{batcher: batcher}, nil
 }
 
-// Detect находит персональные данные в тексте через Batcher.
-func (e *Extractor) Detect(ctx context.Context, text string) ([]entity.Entity, error) {
-	if text == "" {
+// Detect находит персональные данные в original через Batcher, передавая
+// gate (byte-preserving masked residual) как вход обученного гейта.
+func (e *Extractor) Detect(ctx context.Context, original, gate string) ([]entity.Entity, error) {
+	if original == "" {
 		return nil, nil
 	}
 
 	chunkID := fmt.Sprintf("chunk-%d", e.seq.Add(1))
-	result, err := e.batcher.Process(ctx, RequestItem{ChunkID: chunkID, Text: text})
+	result, err := e.batcher.Process(ctx, RequestItem{ChunkID: chunkID, Text: original, GateText: gate})
 	if err != nil {
 		return nil, err
 	}
 
-	byteOffsets := buildByteOffsets(text)
-	runes := []rune(text)
+	byteOffsets := buildByteOffsets(original)
+	runes := []rune(original)
 
 	out := make([]entity.Entity, 0, len(result.Entities))
 	for _, me := range result.Entities {
@@ -54,7 +55,7 @@ func (e *Extractor) Detect(ctx context.Context, text string) ([]entity.Entity, e
 
 		out = append(out, entity.Entity{
 			Type:   typ,
-			Text:   text[startByte:endByte],
+			Text:   original[startByte:endByte],
 			Start:  startByte,
 			End:    endByte,
 			Score:  me.Confidence,
@@ -80,8 +81,24 @@ func mapMLType(t string) (entity.Type, bool) {
 	switch t {
 	case "full_name", "first_name", "last_name", "patronymic":
 		return entity.FULL_NAME, true
-	case "address", "city", "street", "house", "apartment", "postal_code":
+	case "address":
 		return entity.ADDRESS, true
+	case "city":
+		return entity.CITY, true
+	case "street":
+		return entity.STREET, true
+	case "house":
+		return entity.HOUSE, true
+	case "apartment":
+		return entity.APARTMENT, true
+	case "postal_code", "postcode":
+		return entity.POSTAL_CODE, true
+	case "country":
+		return entity.COUNTRY, true
+	case "region":
+		return entity.REGION, true
+	case "district":
+		return entity.DISTRICT, true
 	case "place_of_birth":
 		return entity.BIRTH_PLACE, true
 	case "citizenship":
@@ -108,8 +125,10 @@ func mapMLType(t string) (entity.Type, bool) {
 		return entity.PIN, true
 	case "card":
 		return entity.CARD_NUMBER, true
-	case "date":
+	case "date", "date_of_birth":
 		return entity.BIRTH_DATE, true
+	case "passport_issue_date":
+		return entity.PASSPORT_ISSUE_DATE, true
 	default:
 		return "", false
 	}

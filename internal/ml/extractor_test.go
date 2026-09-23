@@ -32,6 +32,10 @@ func (e *entityClient) ProcessBatch(_ context.Context, req BatchRequest) (BatchR
 	}, nil
 }
 
+func (e *entityClient) ProcessBatchV2(_ context.Context, req BatchRequest) (BatchResponse, error) {
+	return e.ProcessBatch(context.Background(), req)
+}
+
 func newTestExtractor(t *testing.T, client Client) *Extractor {
 	t.Helper()
 	cfg := DefaultBatchConfig()
@@ -56,7 +60,7 @@ func TestExtractorASCII(t *testing.T) {
 	}}
 	e := newTestExtractor(t, ec)
 
-	ents, err := e.Detect(context.Background(), "call 79123456789")
+	ents, err := e.Detect(context.Background(), "call 79123456789", "call 79123456789")
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
 	}
@@ -78,7 +82,7 @@ func TestExtractorCyrillic(t *testing.T) {
 	}}
 	e := newTestExtractor(t, ec)
 
-	ents, err := e.Detect(context.Background(), "звони 79123456789")
+	ents, err := e.Detect(context.Background(), "звони 79123456789", "звони 79123456789")
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
 	}
@@ -98,7 +102,7 @@ func TestExtractorEmoji(t *testing.T) {
 	}}
 	e := newTestExtractor(t, ec)
 
-	ents, err := e.Detect(context.Background(), "😀 79123456789")
+	ents, err := e.Detect(context.Background(), "😀 79123456789", "😀 79123456789")
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
 	}
@@ -122,11 +126,14 @@ func TestExtractorTypeMapping(t *testing.T) {
 		{"last_name", entity.FULL_NAME},
 		{"patronymic", entity.FULL_NAME},
 		{"address", entity.ADDRESS},
-		{"city", entity.ADDRESS},
-		{"street", entity.ADDRESS},
-		{"house", entity.ADDRESS},
-		{"apartment", entity.ADDRESS},
-		{"postal_code", entity.ADDRESS},
+		{"city", entity.CITY},
+		{"street", entity.STREET},
+		{"house", entity.HOUSE},
+		{"apartment", entity.APARTMENT},
+		{"postal_code", entity.POSTAL_CODE},
+		{"country", entity.COUNTRY},
+		{"region", entity.REGION},
+		{"district", entity.DISTRICT},
 		{"place_of_birth", entity.BIRTH_PLACE},
 		{"citizenship", entity.CITIZENSHIP},
 		{"passport_issuer", entity.PASSPORT_ISSUER},
@@ -141,6 +148,8 @@ func TestExtractorTypeMapping(t *testing.T) {
 		{"pin", entity.PIN},
 		{"card", entity.CARD_NUMBER},
 		{"date", entity.BIRTH_DATE},
+		{"date_of_birth", entity.BIRTH_DATE},
+		{"passport_issue_date", entity.PASSPORT_ISSUE_DATE},
 	}
 	for _, c := range cases {
 		t.Run(c.mlType, func(t *testing.T) {
@@ -148,7 +157,7 @@ func TestExtractorTypeMapping(t *testing.T) {
 				{Type: c.mlType, Start: 0, End: 1, Confidence: 0.9},
 			}}
 			e := newTestExtractor(t, ec)
-			ents, err := e.Detect(context.Background(), "x")
+			ents, err := e.Detect(context.Background(), "x", "x")
 			if err != nil {
 				t.Fatalf("Detect returned error: %v", err)
 			}
@@ -165,7 +174,7 @@ func TestExtractorUnknownType(t *testing.T) {
 	}}
 	e := newTestExtractor(t, ec)
 
-	_, err := e.Detect(context.Background(), "x")
+	_, err := e.Detect(context.Background(), "x", "x")
 	if !errors.Is(err, pii.ErrInvalidMLResponse) {
 		t.Fatalf("expected ErrInvalidMLResponse, got %v", err)
 	}
@@ -187,7 +196,7 @@ func TestExtractorInvalidCoords(t *testing.T) {
 				{Type: "phone", Start: c.start, End: c.end, Confidence: 0.9},
 			}}
 			e := newTestExtractor(t, ec)
-			_, err := e.Detect(context.Background(), "x")
+			_, err := e.Detect(context.Background(), "x", "x")
 			if !errors.Is(err, pii.ErrInvalidMLResponse) {
 				t.Fatalf("expected ErrInvalidMLResponse, got %v", err)
 			}
@@ -201,7 +210,7 @@ func TestExtractorEmptyText(t *testing.T) {
 	}}
 	e := newTestExtractor(t, ec)
 
-	ents, err := e.Detect(context.Background(), "")
+	ents, err := e.Detect(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("Detect returned error: %v", err)
 	}
@@ -214,7 +223,7 @@ func TestExtractorBatcherError(t *testing.T) {
 	ec := &entityClient{err: errors.New("batcher failed")}
 	e := newTestExtractor(t, ec)
 
-	_, err := e.Detect(context.Background(), "call 79123456789")
+	_, err := e.Detect(context.Background(), "call 79123456789", "call 79123456789")
 	if err == nil || err.Error() != "batcher failed" {
 		t.Fatalf("expected batcher error, got %v", err)
 	}
@@ -229,7 +238,7 @@ func TestExtractorCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := e.Detect(ctx, "call 79123456789")
+	_, err := e.Detect(ctx, "call 79123456789", "call 79123456789")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}

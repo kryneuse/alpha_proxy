@@ -134,12 +134,17 @@ func (b *Batcher) processBatch(batch []batchJob) {
 		transportID := fmt.Sprintf("%s-%d", batchID, i)
 		transportIDs[i] = transportID
 		req.Items = append(req.Items, RequestItem{
-			ChunkID: transportID,
-			Text:    job.item.Text,
+			ChunkID:  transportID,
+			Text:     job.item.Text,
+			GateText: job.item.GateText,
 		})
 	}
 
-	resp, err := b.client.ProcessBatch(b.ctx, req)
+	// A batch may contain independent callers. Bound the shared RPC without
+	// tying its lifetime to any one caller's cancellation.
+	rpcCtx, cancel := context.WithTimeout(b.ctx, b.cfg.RPCTimeout)
+	defer cancel()
+	resp, err := b.client.ProcessBatchV2(rpcCtx, req)
 	if err != nil {
 		for _, job := range batch {
 			job.result <- jobResult{err: err}

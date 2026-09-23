@@ -13,12 +13,18 @@ import (
 
 type fakePIIDetectorClient struct {
 	req  *mlv1.DetectBatchRequest
+	reqV2 *mlv1.DetectBatchV2Request
 	resp *mlv1.DetectBatchResponse
 	err  error
 }
 
 func (f *fakePIIDetectorClient) DetectBatch(_ context.Context, in *mlv1.DetectBatchRequest, _ ...grpc.CallOption) (*mlv1.DetectBatchResponse, error) {
 	f.req = in
+	return f.resp, f.err
+}
+
+func (f *fakePIIDetectorClient) DetectBatchV2(_ context.Context, in *mlv1.DetectBatchV2Request, _ ...grpc.CallOption) (*mlv1.DetectBatchResponse, error) {
+	f.reqV2 = in
 	return f.resp, f.err
 }
 

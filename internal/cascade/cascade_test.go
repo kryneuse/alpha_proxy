@@ -2,10 +2,10 @@ package cascade
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kryneuse/alpha_proxy/internal/entity"
-	"github.com/kryneuse/alpha_proxy/internal/gate"
 )
 
 // fakeEngine is a rule engine that returns a fixed set of entities.
@@ -17,228 +17,100 @@ func (f *fakeEngine) Analyze(text string) []entity.Entity {
 	return f.entities
 }
 
-// fakeCheap is a cheap classifier with a fixed score.
-type fakeCheap struct {
-	score float64
-	calls int
-}
-
-func (f *fakeCheap) HasPII(ctx context.Context, text string) (float64, error) {
-	f.calls++
-	return f.score, nil
-}
-
 // fakeExpensive is an expensive extractor with a fixed set of entities.
 type fakeExpensive struct {
 	entities []entity.Entity
+	err      error
 	calls    int
+	lastOrig string
+	lastGate string
 }
 
-func (f *fakeExpensive) Detect(ctx context.Context, text string) ([]entity.Entity, error) {
+func (f *fakeExpensive) Detect(ctx context.Context, original, gate string) ([]entity.Entity, error) {
 	f.calls++
+	f.lastOrig = original
+	f.lastGate = gate
+	if f.err != nil {
+		return nil, f.err
+	}
 	return f.entities, nil
 }
 
-// TestRouteSafe asserts that SAFE does not invoke cheap or expensive.
-func TestRouteSafe(t *testing.T) {
-	engine := &fakeEngine{}
-	cheap := &fakeCheap{}
-	expensive := &fakeExpensive{}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	res, err := c.Run(context.Background(), "сегодня хорошая погода")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Route != gate.SAFE {
-		t.Errorf("expected SAFE, got %s", res.Route)
-	}
-	if cheap.calls != 0 {
-		t.Errorf("expected cheap not invoked, got %d calls", cheap.calls)
-	}
-	if expensive.calls != 0 {
-		t.Errorf("expected expensive not invoked, got %d calls", expensive.calls)
-	}
-}
-
-// TestRouteUncertainCheapNegative asserts UNCERTAIN + cheap negative does not
-// invoke expensive.
-func TestRouteUncertainCheapNegative(t *testing.T) {
-	engine := &fakeEngine{}
-	cheap := &fakeCheap{score: 0.2}
-	expensive := &fakeExpensive{}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	res, err := c.Run(context.Background(), "Иван Петров")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Route != gate.UNCERTAIN {
-		t.Errorf("expected UNCERTAIN, got %s", res.Route)
-	}
-	if cheap.calls != 1 {
-		t.Errorf("expected cheap invoked once, got %d", cheap.calls)
-	}
-	if expensive.calls != 0 {
-		t.Errorf("expected expensive not invoked, got %d", expensive.calls)
-	}
-}
-
-// TestRouteUncertainCheapPositive asserts UNCERTAIN + cheap positive invokes
-// expensive.
-func TestRouteUncertainCheapPositive(t *testing.T) {
-	engine := &fakeEngine{}
-	cheap := &fakeCheap{score: 0.8}
-	expensive := &fakeExpensive{entities: []entity.Entity{
-		{Type: entity.PHONE, Text: "+7 (912) 345-67-89", Start: 0, End: 18},
-	}}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	res, err := c.Run(context.Background(), "Иван Петров")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cheap.calls != 1 {
-		t.Errorf("expected cheap invoked once, got %d", cheap.calls)
-	}
-	if expensive.calls != 1 {
-		t.Errorf("expected expensive invoked once, got %d", expensive.calls)
-	}
-	if len(res.Entities) != 1 {
-		t.Errorf("expected 1 merged entity, got %d (%+v)", len(res.Entities), res.Entities)
-	}
-}
-
-// TestRouteLikelyPII asserts LIKELY_PII skips cheap and invokes expensive.
-func TestRouteLikelyPII(t *testing.T) {
-	engine := &fakeEngine{}
-	cheap := &fakeCheap{}
-	expensive := &fakeExpensive{entities: []entity.Entity{
-		{Type: entity.PASSPORT, Text: "4510 123456", Start: 8, End: 19},
-	}}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	res, err := c.Run(context.Background(), "паспорт 4510 123456")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if res.Route != gate.LIKELY_PII {
-		t.Errorf("expected LIKELY_PII, got %s", res.Route)
-	}
-	if cheap.calls != 0 {
-		t.Errorf("expected cheap NOT invoked, got %d", cheap.calls)
-	}
-	if expensive.calls != 1 {
-		t.Errorf("expected expensive invoked once, got %d", expensive.calls)
-	}
-}
-
-// TestRuleEntitiesPreserved asserts rule entities are in the final result.
-func TestRuleEntitiesPreserved(t *testing.T) {
-	engine := &fakeEngine{entities: []entity.Entity{
-		{Type: entity.FULL_NAME, Text: "Иван Петров", Start: 0, End: 11},
-	}}
-	cheap := &fakeCheap{score: 0.8}
-	expensive := &fakeExpensive{entities: []entity.Entity{
-		{Type: entity.PHONE, Text: "+7 (912) 345-67-89", Start: 12, End: 30},
-	}}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	chunk := "Иван Петров +7 (912) 345-67-89"
-	res, err := c.Run(context.Background(), chunk)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	found := false
-	for _, e := range res.Entities {
-		if e.Type == entity.FULL_NAME && e.Text == "Иван Петров" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("expected rule entity preserved, got %+v", res.Entities)
-	}
-}
-
-// TestResidualMasksRuleSpans asserts the residual masks rule spans with spaces
-// while preserving byte length.
-func TestResidualMasksRuleSpans(t *testing.T) {
+// TestAnalyzeRules asserts rules run on the whole text and residual is
+// byte-preserving masked.
+func TestAnalyzeRules(t *testing.T) {
 	engine := &fakeEngine{entities: []entity.Entity{
 		{Type: entity.FULL_NAME, Text: "Иван Петров", Start: 8, End: 19},
 	}}
-	cheap := &fakeCheap{score: 0.2}
 	expensive := &fakeExpensive{}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	chunk := "Клиент Иван Петров, номер документа 4510 123456"
-	res, err := c.Run(context.Background(), chunk)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	c := New(engine, expensive)
+	text := "Клиент Иван Петров, номер документа 4510 123456"
+	ruleEntities, residualText := c.AnalyzeRules(text)
+	if len(ruleEntities) != 1 {
+		t.Fatalf("expected 1 rule entity, got %d", len(ruleEntities))
 	}
-	if len(res.Residual) != len(chunk) {
-		t.Errorf("residual length %d != original %d", len(res.Residual), len(chunk))
+	if len(residualText) != len(text) {
+		t.Errorf("residual length %d != original %d", len(residualText), len(text))
 	}
 	for i := 8; i < 19; i++ {
-		if res.Residual[i] != ' ' {
-			t.Errorf("expected space at byte %d, got %q", i, res.Residual[i])
+		if residualText[i] != ' ' {
+			t.Errorf("expected space at byte %d, got %q", i, residualText[i])
 		}
 	}
 }
 
-// TestResidualCyrillicOffsets asserts byte offsets are preserved on Cyrillic.
-func TestResidualCyrillicOffsets(t *testing.T) {
-	// "Иван" is 8 bytes (4 Cyrillic letters x 2 bytes).
-	engine := &fakeEngine{entities: []entity.Entity{
-		{Type: entity.FULL_NAME, Text: "Иван", Start: 0, End: 8},
+// TestDetectChunk asserts the ML extractor receives the (original, gate) pair.
+func TestDetectChunk(t *testing.T) {
+	engine := &fakeEngine{}
+	expensive := &fakeExpensive{entities: []entity.Entity{
+		{Type: entity.PHONE, Text: "+7 (912) 345-67-89", Start: 0, End: 18},
 	}}
-	cheap := &fakeCheap{score: 0.2}
-	expensive := &fakeExpensive{}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, expensive)
-	chunk := "Иван Петров"
-	res, err := c.Run(context.Background(), chunk)
+	c := New(engine, expensive)
+	entities, err := c.DetectChunk(context.Background(), "call +7 (912) 345-67-89", "call                 ")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(res.Residual) != len(chunk) {
-		t.Errorf("residual length %d != original %d", len(res.Residual), len(chunk))
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
 	}
-	for i := 0; i < 8; i++ {
-		if res.Residual[i] != ' ' {
-			t.Errorf("expected space at byte %d, got %q", i, res.Residual[i])
-		}
+	if expensive.lastOrig != "call +7 (912) 345-67-89" {
+		t.Errorf("unexpected original %q", expensive.lastOrig)
 	}
-	// "Петров" starts at byte 9 (after 8 masked bytes + 1 space) and is 12 bytes.
-	if res.Residual[9:21] != "Петров" {
-		t.Errorf("expected 'Петров' preserved, got %q", res.Residual[9:21])
+	if expensive.lastGate != "call                 " {
+		t.Errorf("unexpected gate %q", expensive.lastGate)
 	}
 }
 
-// TestUncertainNilCheapRoutesToExpensive asserts that UNCERTAIN with nil cheap
-// routes straight to the expensive extractor and does not return an error.
-func TestUncertainNilCheapRoutesToExpensive(t *testing.T) {
+// TestDetectChunkNilExpensive asserts fail-closed when expensive is nil.
+func TestDetectChunkNilExpensive(t *testing.T) {
 	engine := &fakeEngine{}
-	expensive := &fakeExpensive{}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, nil, expensive)
-	_, err := c.Run(context.Background(), "Иван Петров")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if expensive.calls != 1 {
-		t.Fatalf("expected expensive extractor to be called once, got %d", expensive.calls)
-	}
-}
-
-// TestFailClosedExpensiveNil asserts that LIKELY_PII with nil expensive fails
-// closed.
-func TestFailClosedExpensiveNil(t *testing.T) {
-	engine := &fakeEngine{}
-	cheap := &fakeCheap{}
-	g := gate.New(gate.DefaultConfig())
-	c := New(engine, g, cheap, nil)
-	_, err := c.Run(context.Background(), "паспорт 4510 123456")
+	c := New(engine, nil)
+	_, err := c.DetectChunk(context.Background(), "text", "text")
 	if err == nil {
-		t.Error("expected error when expensive extractor is nil on LIKELY_PII route")
+		t.Error("expected error when expensive extractor is nil")
+	}
+}
+
+// TestDetectChunkCancelled asserts a cancelled context stops the cascade.
+func TestDetectChunkCancelled(t *testing.T) {
+	engine := &fakeEngine{}
+	expensive := &fakeExpensive{}
+	c := New(engine, expensive)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.DetectChunk(ctx, "text", "text")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled, got %v", err)
+	}
+}
+
+// TestDetectChunkErrorPropagates asserts an extractor error is returned.
+func TestDetectChunkErrorPropagates(t *testing.T) {
+	engine := &fakeEngine{}
+	expensive := &fakeExpensive{err: errors.New("ml failed")}
+	c := New(engine, expensive)
+	_, err := c.DetectChunk(context.Background(), "text", "text")
+	if err == nil || err.Error() != "ml failed" {
+		t.Fatalf("expected ml error, got %v", err)
 	}
 }

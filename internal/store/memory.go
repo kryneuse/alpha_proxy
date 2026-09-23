@@ -12,6 +12,7 @@ type memoryStore struct {
 	mu          sync.Mutex
 	maxSessions int
 	sessions    map[string]pii.Session
+	nextPurge   time.Time
 }
 
 func NewMemoryStore(maxSessions int) Store {
@@ -66,7 +67,12 @@ func (s *memoryStore) PutIfAbsent(ctx context.Context, session *pii.Session) (bo
 		delete(s.sessions, session.PayloadID)
 	}
 
-	s.purgeExpired(now)
+	// Amortize TTL cleanup: scanning every live session on every insertion
+	// makes sustained masking quadratic. Still sweep immediately at capacity.
+	if !now.Before(s.nextPurge) || len(s.sessions) >= s.maxSessions {
+		s.purgeExpired(now)
+		s.nextPurge = now.Add(time.Second)
+	}
 
 	if len(s.sessions) >= s.maxSessions {
 		return false, pii.ErrStoreUnavailable

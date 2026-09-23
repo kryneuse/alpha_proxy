@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-import pii_detector_pb2 as pii__detector__pb2
+import pii_pb2 as pii__pb2
 
 GRPC_GENERATED_VERSION = '1.80.0'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in pii_detector_pb2_grpc.py depends on'
+        + ' but the generated code in pii_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -41,8 +41,13 @@ class PIIDetectorStub(object):
         """
         self.DetectBatch = channel.unary_unary(
                 '/alpha_proxy.ml.v1.PIIDetector/DetectBatch',
-                request_serializer=pii__detector__pb2.DetectBatchRequest.SerializeToString,
-                response_deserializer=pii__detector__pb2.DetectBatchResponse.FromString,
+                request_serializer=pii__pb2.DetectBatchRequest.SerializeToString,
+                response_deserializer=pii__pb2.DetectBatchResponse.FromString,
+                _registered_method=True)
+        self.DetectBatchV2 = channel.unary_unary(
+                '/alpha_proxy.ml.v1.PIIDetector/DetectBatchV2',
+                request_serializer=pii__pb2.DetectBatchV2Request.SerializeToString,
+                response_deserializer=pii__pb2.DetectBatchResponse.FromString,
                 _registered_method=True)
 
 
@@ -59,12 +64,12 @@ class PIIDetectorServicer(object):
         независимыми chunks текста.
 
         Общие ошибки всего RPC (не отдельных chunks):
-        INVALID_ARGUMENT — сломана структура всего batch (например, пустой
+        INVALID_ARGUMENT  — сломана структура всего batch (например, пустой
         batch_id или пустой список chunks).
         RESOURCE_EXHAUSTED — очередь ML переполнена. В этом случае ML не
         возвращает частичный обычный ответ, а завершает
         весь RPC ошибкой.
-        UNAVAILABLE — ML временно недоступен.
+        UNAVAILABLE       — ML временно недоступен.
         DEADLINE_EXCEEDED — превышен deadline запроса.
 
         Ошибки отдельных chunks передаются через ChunkErrorCode внутри
@@ -76,13 +81,44 @@ class PIIDetectorServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DetectBatchV2(self, request, context):
+        """DetectBatchV2 — unary метод обработки одного batch с несколькими
+        независимыми парами (original_text, gate_text).
+
+        Семантика V2 отличается от V1: координаты сущностей в ответе всегда
+        считаются относительно original_text соответствующего chunk. gate_text
+        логически обязателен и используется только как вход обученного гейта;
+        NER всегда получает original_text.
+
+        Общие ошибки всего RPC (не отдельных chunks):
+        INVALID_ARGUMENT   — сломана структура всего batch (пустой batch_id,
+        пустой список chunks, отсутствующий gate_text,
+        неподдерживаемый offset_unit, некорректная пара).
+        FAILED_PRECONDITION — сервис сконфигурирован только на V2 и отклоняет
+        старый DetectBatch.
+        RESOURCE_EXHAUSTED — очередь ML переполнена.
+        UNAVAILABLE        — ML временно недоступен.
+        DEADLINE_EXCEEDED  — превышен deadline запроса.
+
+        Ошибки отдельных chunks передаются через ChunkErrorCode внутри
+        ChunkResult, а не через статус RPC.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PIIDetectorServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'DetectBatch': grpc.unary_unary_rpc_method_handler(
                     servicer.DetectBatch,
-                    request_deserializer=pii__detector__pb2.DetectBatchRequest.FromString,
-                    response_serializer=pii__detector__pb2.DetectBatchResponse.SerializeToString,
+                    request_deserializer=pii__pb2.DetectBatchRequest.FromString,
+                    response_serializer=pii__pb2.DetectBatchResponse.SerializeToString,
+            ),
+            'DetectBatchV2': grpc.unary_unary_rpc_method_handler(
+                    servicer.DetectBatchV2,
+                    request_deserializer=pii__pb2.DetectBatchV2Request.FromString,
+                    response_serializer=pii__pb2.DetectBatchResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -115,8 +151,35 @@ class PIIDetector(object):
             request,
             target,
             '/alpha_proxy.ml.v1.PIIDetector/DetectBatch',
-            pii__detector__pb2.DetectBatchRequest.SerializeToString,
-            pii__detector__pb2.DetectBatchResponse.FromString,
+            pii__pb2.DetectBatchRequest.SerializeToString,
+            pii__pb2.DetectBatchResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DetectBatchV2(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/alpha_proxy.ml.v1.PIIDetector/DetectBatchV2',
+            pii__pb2.DetectBatchV2Request.SerializeToString,
+            pii__pb2.DetectBatchResponse.FromString,
             options,
             channel_credentials,
             insecure,

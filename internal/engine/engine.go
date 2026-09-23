@@ -3,6 +3,8 @@
 package engine
 
 import (
+	"unicode/utf8"
+
 	"github.com/kryneuse/alpha_proxy/internal/context"
 	"github.com/kryneuse/alpha_proxy/internal/entity"
 	"github.com/kryneuse/alpha_proxy/internal/normalize"
@@ -78,16 +80,19 @@ func (e *Engine) Analyze(text string) []entity.Entity {
 		scored = append(scored, adjusted)
 	}
 
-	// Second pass: a nearby CARD_NUMBER is a strong signal for CVV/PIN.
-	scored = boostNearCard(scored)
+	// Second pass: a nearby CARD_NUMBER is a strong signal for CVV/PIN, but
+	// only when the code already has its own positive context.
+	scored = boostNearCard(text, scored)
 
 	return e.resolver.Resolve(scored)
 }
 
 // boostNearCard raises the score of CVV/PIN candidates that are close to a
 // detected CARD_NUMBER. A real card number nearby is strong evidence that a
-// 3/4-digit number is a CVV/PIN.
-func boostNearCard(spans []entity.CandidateSpan) []entity.CandidateSpan {
+// 3/4-digit number is a CVV/PIN, but only after the candidate already has its
+// own positive context. Distances are measured in Unicode characters, not
+// byte offsets.
+func boostNearCard(text string, spans []entity.CandidateSpan) []entity.CandidateSpan {
 	// Collect card number spans.
 	var cards []entity.CandidateSpan
 	for _, s := range spans {
@@ -104,8 +109,12 @@ func boostNearCard(spans []entity.CandidateSpan) []entity.CandidateSpan {
 		if s.Type != entity.CVV && s.Type != entity.PIN {
 			continue
 		}
+		// Only boost a code that already has its own positive context.
+		if !s.Contextual {
+			continue
+		}
 		for _, c := range cards {
-			if spansClose(s, c, 60) {
+			if spansCloseRunes(text, s, c, 60) {
 				// Strong boost: a card number nearby.
 				out[i].Score += 0.4
 				if out[i].Score > 1 {
@@ -119,13 +128,14 @@ func boostNearCard(spans []entity.CandidateSpan) []entity.CandidateSpan {
 	return out
 }
 
-// spansClose reports whether two spans are within maxGap runes of each other.
-func spansClose(a, b entity.CandidateSpan, maxGap int) bool {
+// spansCloseRunes reports whether two spans are within maxGap Unicode
+// characters of each other.
+func spansCloseRunes(text string, a, b entity.CandidateSpan, maxGap int) bool {
 	if a.End < b.Start {
-		return b.Start-a.End <= maxGap
+		return utf8.RuneCountInString(text[a.End:b.Start]) <= maxGap
 	}
 	if b.End < a.Start {
-		return a.Start-b.End <= maxGap
+		return utf8.RuneCountInString(text[b.End:a.Start]) <= maxGap
 	}
 	return true
 }

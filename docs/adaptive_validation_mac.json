@@ -1,0 +1,104 @@
+{
+  "hardware": {
+    "model": "Mac16,7",
+    "logical_cpus": 14,
+    "memory_gib": 48
+  },
+  "runtime": {
+    "backend": "adaptive",
+    "replicas": 6,
+    "quality_workers_per_replica": 1,
+    "spacy_workers_per_replica": 2,
+    "routing_budget_ms": 100
+  },
+  "low_load_routing": {
+    "quality": 12,
+    "spacy_sm": 0
+  },
+  "round_trip_smoke": {
+    "masked": "👩‍💻 <FULL_NAME_1>, телефон <PHONE_1>, email <EMAIL_1>. Адрес: <ADDRESS_1><ADDRESS_2>",
+    "exact_round_trip": true,
+    "retry_idempotent": true
+  },
+  "measurements": [
+    {
+      "chars": 250,
+      "concurrency": 96,
+      "elapsed_seconds": 15.069275584,
+      "error_rate": 0,
+      "exact_round_trips": 0,
+      "http_requests_per_second": 2565.816769656338,
+      "latency_population": "successful transactions; in-flight requests drained after measurement window",
+      "mode": "mask",
+      "p50_ms": 26.916084,
+      "p95_ms": 93.530292,
+      "p99_ms": 125.115625,
+      "statuses": {
+        "200": 38665
+      },
+      "success_transactions_per_second": 2565.816769656338,
+      "successful_transactions": 38665,
+      "transactions": 38665,
+      "route_chunks": {
+        "quality": 1048,
+        "spacy_sm": 37617
+      }
+    },
+    {
+      "chars": 1000,
+      "concurrency": 48,
+      "elapsed_seconds": 12.063989375,
+      "error_rate": 0,
+      "exact_round_trips": 0,
+      "http_requests_per_second": 664.1252533430717,
+      "latency_population": "successful transactions; in-flight requests drained after measurement window",
+      "mode": "mask",
+      "p50_ms": 70.6585,
+      "p95_ms": 130.2315,
+      "p99_ms": 154.112833,
+      "statuses": {
+        "200": 8012
+      },
+      "success_transactions_per_second": 664.1252533430717,
+      "successful_transactions": 8012,
+      "transactions": 8012,
+      "route_chunks": {
+        "quality": 733,
+        "spacy_sm": 31315
+      }
+    },
+    {
+      "chars": 250,
+      "concurrency": 48,
+      "elapsed_seconds": 10.061678708,
+      "error_rate": 0,
+      "exact_round_trips": 23533,
+      "http_requests_per_second": 4677.748253139708,
+      "latency_population": "successful transactions; in-flight requests drained after measurement window",
+      "mode": "mask_then_demask",
+      "p50_ms": 15.469667,
+      "p95_ms": 51.157833,
+      "p99_ms": 80.300167,
+      "statuses": {
+        "200": 23533
+      },
+      "success_transactions_per_second": 2338.874126569854,
+      "successful_transactions": 23533,
+      "transactions": 23533,
+      "route_chunks": {
+        "quality": 701,
+        "spacy_sm": 22832
+      }
+    }
+  ],
+  "tests": {
+    "go_all": "passed",
+    "go_race_ml_store_masking_tokenizer": "passed",
+    "python_runtime": "40 passed; 2 optional legacy transformers tests skipped"
+  },
+  "recovery_routing": {
+    "quality": 12,
+    "spacy_sm": 0
+  },
+  "finished_at": 1790191796.904393
+}

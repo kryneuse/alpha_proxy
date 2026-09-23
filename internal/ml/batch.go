@@ -17,6 +17,7 @@ type BatchConfig struct {
 	MaxWait       time.Duration
 	QueueCapacity int
 	Workers       int
+	RPCTimeout    time.Duration
 }
 
 // DefaultBatchConfig возвращает временные значения по умолчанию.
@@ -28,6 +29,7 @@ func DefaultBatchConfig() BatchConfig {
 		MaxWait:       5 * time.Millisecond,
 		QueueCapacity: 1024,
 		Workers:       4,
+		RPCTimeout:    2 * time.Second,
 	}
 }
 
@@ -47,6 +49,9 @@ func (c BatchConfig) Validate() error {
 	}
 	if c.Workers <= 0 {
 		return errors.New("workers must be > 0")
+	}
+	if c.RPCTimeout <= 0 {
+		return errors.New("rpc timeout must be > 0")
 	}
 	return nil
 }

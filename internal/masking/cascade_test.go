@@ -8,13 +8,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kryneuse/alpha_proxy/internal/cascade"
 	"github.com/kryneuse/alpha_proxy/internal/entity"
 	"github.com/kryneuse/alpha_proxy/internal/ml"
 	"github.com/kryneuse/alpha_proxy/internal/pii"
 )
 
-// fullChunkRunner возвращает entity для всего чанка.
+// fullChunkRunner возвращает entity для всего чанка. reason "ml" отдаёт
+// сущность через RunResidual, reason "regex" — через AnalyzeRules.
 type fullChunkRunner struct {
 	reason    string
 	typ       entity.Type
@@ -26,7 +26,20 @@ type fullChunkRunner struct {
 	maxActive int
 }
 
-func (f *fullChunkRunner) Run(ctx context.Context, text string) (cascade.Result, error) {
+func (f *fullChunkRunner) AnalyzeRules(text string) ([]entity.Entity, string) {
+	if f.reason == "regex" && text != "" {
+		typ := f.typ
+		if typ == "" {
+			typ = entity.PHONE
+		}
+		return []entity.Entity{
+			{Type: typ, Text: text, Start: 0, End: len(text), Score: 0.9, Reason: f.reason},
+		}, text
+	}
+	return nil, text
+}
+
+func (f *fullChunkRunner) DetectChunk(ctx context.Context, original, gate string) ([]entity.Entity, error) {
 	f.mu.Lock()
 	f.active++
 	if f.active > f.maxActive {
@@ -48,25 +61,25 @@ func (f *fullChunkRunner) Run(ctx context.Context, text string) (cascade.Result,
 		select {
 		case <-f.block:
 		case <-ctx.Done():
-			return cascade.Result{}, ctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 	if f.err != nil {
-		return cascade.Result{}, f.err
+		return nil, f.err
 	}
-	if text == "" {
-		return cascade.Result{}, nil
+	if original == "" || f.reason != "ml" {
+		return nil, nil
 	}
 	typ := f.typ
 	if typ == "" {
 		typ = entity.PHONE
 	}
-	return cascade.Result{Entities: []entity.Entity{
-		{Type: typ, Text: text, Start: 0, End: len(text), Score: 0.9, Reason: f.reason},
-	}}, nil
+	return []entity.Entity{
+		{Type: typ, Text: original, Start: 0, End: len(original), Score: 0.9, Reason: f.reason},
+	}, nil
 }
 
-func newTestCascadeMasker(t *testing.T, r runner, maxParallel int) *CascadeMasker {
+func newTestCascadeMasker(t *testing.T, r cascadeRunner, maxParallel int) *CascadeMasker {
 	t.Helper()
 	cfg := ml.DefaultChunkConfig()
 	m, err := NewCascadeMasker(r, cfg, maxParallel)
@@ -231,10 +244,14 @@ func TestCascadeMaskerInvalidSpan(t *testing.T) {
 
 type invalidSpanRunner struct{}
 
-func (invalidSpanRunner) Run(_ context.Context, text string) (cascade.Result, error) {
-	return cascade.Result{Entities: []entity.Entity{
+func (invalidSpanRunner) AnalyzeRules(text string) ([]entity.Entity, string) {
+	return nil, text
+}
+
+func (invalidSpanRunner) DetectChunk(_ context.Context, original, gate string) ([]entity.Entity, error) {
+	return []entity.Entity{
 		{Type: entity.PHONE, Text: "x", Start: -1, End: 1, Score: 0.9, Reason: "ml"},
-	}}, nil
+	}, nil
 }
 
 func TestCascadeMaskerRunnerError(t *testing.T) {
@@ -329,18 +346,22 @@ type mixedRunner struct {
 	processed []string
 }
 
-func (m *mixedRunner) Run(ctx context.Context, text string) (cascade.Result, error) {
+func (m *mixedRunner) AnalyzeRules(text string) ([]entity.Entity, string) {
+	return nil, text
+}
+
+func (m *mixedRunner) DetectChunk(ctx context.Context, original, gate string) ([]entity.Entity, error) {
 	m.mu.Lock()
-	m.processed = append(m.processed, text)
+	m.processed = append(m.processed, original)
 	m.mu.Unlock()
-	if strings.Contains(text, "ERR") {
-		return cascade.Result{}, errSentinel
+	if strings.Contains(original, "ERR") {
+		return nil, errSentinel
 	}
-	if strings.Contains(text, "BLOCK") {
+	if strings.Contains(original, "BLOCK") {
 		<-ctx.Done()
-		return cascade.Result{}, ctx.Err()
+		return nil, ctx.Err()
 	}
-	return cascade.Result{}, nil
+	return nil, nil
 }
 
 func TestCascadeMaskerFirstErrorWins(t *testing.T) {

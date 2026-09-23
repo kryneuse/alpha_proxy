@@ -1,6 +1,8 @@
 """Tests for text windowing."""
 import sys
 import os
+from pathlib import Path
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -37,7 +39,9 @@ def test_llaim_chunks_boundary():
 
 
 def test_sliding_windows_offsets():
-    from transformers import AutoTokenizer
+    AutoTokenizer = pytest.importorskip("transformers").AutoTokenizer
+    if not (Path(__file__).parents[1] / "models/llaim-ru-legal-ner/config.json").exists():
+        pytest.skip("Optional legacy LLAIM tokenizer not installed")
 
     tokenizer = AutoTokenizer.from_pretrained(
         os.path.join(os.path.dirname(__file__), "..", "models", "llaim-ru-legal-ner")
@@ -54,7 +58,9 @@ def test_sliding_windows_offsets():
 
 
 def test_sliding_windows_long_text():
-    from transformers import AutoTokenizer
+    AutoTokenizer = pytest.importorskip("transformers").AutoTokenizer
+    if not (Path(__file__).parents[1] / "models/llaim-ru-legal-ner/config.json").exists():
+        pytest.skip("Optional legacy LLAIM tokenizer not installed")
 
     tokenizer = AutoTokenizer.from_pretrained(
         os.path.join(os.path.dirname(__file__), "..", "models", "llaim-ru-legal-ner")

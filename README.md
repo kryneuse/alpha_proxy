@@ -1,3 +1,5 @@
+> Новый режим: **adaptive = gate1-v3 + v14a при свободном quality-пуле, spaCy sm при нагрузке**. Несколько CPU-реплик, запуск на Mac, маскирование/демаскирование и метрики описаны в [ADAPTIVE.md](docs/ADAPTIVE.md). Исторические инструкции ниже могут описывать только прежний quality-путь.
+
 # ALFAGEN Rule Engine
 
 Deterministic rule engine for detecting personal data (ПД) in Russian-language
@@ -102,6 +104,36 @@ go run ./cmd/evaluate
 Prints overall and per-type Precision / Recall / F1, false positive rate on
 negative cases, and average latency. The dataset lives in
 `internal/eval/dataset.go` (all synthetic).
+
+## Running the ML cascade (Go + Python)
+
+The Go server delegates residual PII detection to the Python ML service over
+gRPC. The ML service runs the `gate1-v3` gate and the `source99-expansion-v14a-epoch1`
+NER (see `ml-service/README.md`).
+
+### 1. Start the Python ML service
+
+```bash
+cd ml-service
+.venv/bin/python -m ml_service
+```
+
+Exact models and gate threshold (defaults in `ml_service/config.py`):
+
+| Параметр | Значение |
+|----------|----------|
+| Гейт | `models/gate1-v3-onnx` (`model.int8.onnx`) |
+| NER | `models/source99-expansion-v14a-epoch1-onnx` (`model.int8.onnx`) |
+| Порог гейта | `1.823714370630114e-7` (`ML_GATE_THRESHOLD`) |
+| gRPC порт | `50051` (`ML_GRPC_PORT`) |
+
+### 2. Start the Go server
+
+```sh
+ALPHA_PROXY_ML_ADDR=127.0.0.1:50051 go run ./cmd/server
+```
+
+`ALPHA_PROXY_ML_ADDR` defaults to `127.0.0.1:50051`.
 
 ## Running benchmarks
 

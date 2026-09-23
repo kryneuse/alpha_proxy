@@ -1,0 +1,111 @@
+[
+  {
+    "chars": 250,
+    "concurrency": 96,
+    "elapsed_seconds": 10.068836666,
+    "error_rate": 0,
+    "exact_round_trips": 0,
+    "http_requests_per_second": 2350.9170706811824,
+    "latency_population": "successful transactions; in-flight requests drained after measurement window",
+    "mode": "mask",
+    "p50_ms": 29.923,
+    "p95_ms": 90.469959,
+    "p99_ms": 109.263583,
+    "statuses": {
+      "200": 23671
+    },
+    "success_transactions_per_second": 2350.9170706811824,
+    "successful_transactions": 23671,
+    "transactions": 23671,
+    "replicas": 4,
+    "quality_workers_per_replica": 1,
+    "spacy_workers_per_replica": 2,
+    "quality_chunks": 474,
+    "spacy_sm_chunks": 23197,
+    "per_replica_chunks": [
+      5929,
+      5865,
+      5936,
+      5941
+    ],
+    "round_trip_smoke": {
+      "masked": "👩‍💻 <FULL_NAME_1>, телефон <PHONE_1>, email <EMAIL_1>. Адрес: <ADDRESS_1><ADDRESS_2>",
+      "exact_round_trip": true,
+      "retry_idempotent": true
+    }
+  },
+  {
+    "chars": 250,
+    "concurrency": 96,
+    "elapsed_seconds": 10.110461875,
+    "error_rate": 0,
+    "exact_round_trips": 0,
+    "http_requests_per_second": 2182.986323757835,
+    "latency_population": "successful transactions; in-flight requests drained after measurement window",
+    "mode": "mask",
+    "p50_ms": 34.273458,
+    "p95_ms": 100.490125,
+    "p99_ms": 128.641041,
+    "statuses": {
+      "200": 22071
+    },
+    "success_transactions_per_second": 2182.986323757835,
+    "successful_transactions": 22071,
+    "transactions": 22071,
+    "replicas": 6,
+    "quality_workers_per_replica": 1,
+    "spacy_workers_per_replica": 1,
+    "quality_chunks": 701,
+    "spacy_sm_chunks": 21370,
+    "per_replica_chunks": [
+      3632,
+      3714,
+      3744,
+      3629,
+      3667,
+      3685
+    ],
+    "round_trip_smoke": {
+      "masked": "👩‍💻 <FULL_NAME_1>, телефон <PHONE_1>, email <EMAIL_1>. Адрес: <ADDRESS_1><ADDRESS_2>",
+      "exact_round_trip": true,
+      "retry_idempotent": true
+    }
+  },
+  {
+    "chars": 250,
+    "concurrency": 96,
+    "elapsed_seconds": 10.046511583,
+    "error_rate": 0,
+    "exact_round_trips": 0,
+    "http_requests_per_second": 2533.615752065769,
+    "latency_population": "successful transactions; in-flight requests drained after measurement window",
+    "mode": "mask",
+    "p50_ms": 26.349959,
+    "p95_ms": 106.950583,
+    "p99_ms": 130.074083,
+    "statuses": {
+      "200": 25454
+    },
+    "success_transactions_per_second": 2533.615752065769,
+    "successful_transactions": 25454,
+    "transactions": 25454,
+    "replicas": 6,
+    "quality_workers_per_replica": 1,
+    "spacy_workers_per_replica": 2,
+    "quality_chunks": 703,
+    "spacy_sm_chunks": 24751,
+    "per_replica_chunks": [
+      4158,
+      4213,
+      4252,
+      4354,
+      4237,
+      4240
+    ],
+    "round_trip_smoke": {
+      "masked": "👩‍💻 <FULL_NAME_1>, телефон <PHONE_1>, email <EMAIL_1>. Адрес: <ADDRESS_1><ADDRESS_2>",
+      "exact_round_trip": true,
+      "retry_idempotent": true
+    }
+  }
+]

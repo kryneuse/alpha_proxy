@@ -24,6 +24,10 @@ class ChunkAudit:
     """Per-chunk audit record produced during detection."""
 
     chunk_id: str
+    backend: str = ""
+    route_reason: str = ""
+    queue_ms: float = 0.0
+    gate_ran: bool = False
     gate_open: bool = False
     gate_score: float = 0.0
     gate_ms: float = 0.0
@@ -31,6 +35,8 @@ class ChunkAudit:
     matched_types: List[str] = field(default_factory=list)
     ignored_types: List[str] = field(default_factory=list)
     error: Optional[str] = None
+    gate_error: Optional[str] = None
+    gate_error_fallback: bool = False
 
 
 @dataclass

@@ -60,6 +60,36 @@ func (f *fakeMLServer) DetectBatch(_ context.Context, req *mlv1.DetectBatchReque
 	}, nil
 }
 
+func (f *fakeMLServer) DetectBatchV2(_ context.Context, req *mlv1.DetectBatchV2Request) (*mlv1.DetectBatchResponse, error) {
+	f.mu.Lock()
+	f.calls++
+	f.batchIDs = append(f.batchIDs, req.BatchId)
+	f.offsetUnits = append(f.offsetUnits, req.OffsetUnit)
+	for _, c := range req.Chunks {
+		f.chunkIDs = append(f.chunkIDs, c.ChunkId)
+	}
+	f.mu.Unlock()
+
+	results := make([]*mlv1.ChunkResult, 0, len(req.Chunks))
+	for _, c := range req.Chunks {
+		cr := &mlv1.ChunkResult{ChunkId: c.ChunkId, ErrorCode: mlv1.ChunkErrorCode_CHUNK_ERROR_CODE_NONE}
+		if idx := strings.Index(c.OriginalText, "СЕКРЕТ"); idx >= 0 {
+			start := utf8.RuneCountInString(c.OriginalText[:idx])
+			end := start + utf8.RuneCountInString("СЕКРЕТ")
+			cr.Entities = []*mlv1.Entity{
+				{Type: mlv1.EntityType_ENTITY_TYPE_FULL_NAME, Start: int32(start), End: int32(end), Confidence: 0.9},
+			}
+		}
+		results = append(results, cr)
+	}
+	return &mlv1.DetectBatchResponse{
+		BatchId:      req.BatchId,
+		ModelVersion: "test-v1",
+		OffsetUnit:   mlv1.OffsetUnit_OFFSET_UNIT_UNICODE_CODE_POINTS,
+		Results:      results,
+	}, nil
+}
+
 func (f *fakeMLServer) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

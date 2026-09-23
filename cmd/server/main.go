@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -23,7 +24,6 @@ import (
 	"github.com/kryneuse/alpha_proxy/internal/config"
 	"github.com/kryneuse/alpha_proxy/internal/contract"
 	"github.com/kryneuse/alpha_proxy/internal/engine"
-	"github.com/kryneuse/alpha_proxy/internal/gate"
 	"github.com/kryneuse/alpha_proxy/internal/masking"
 	"github.com/kryneuse/alpha_proxy/internal/ml"
 	"github.com/kryneuse/alpha_proxy/internal/observability"
@@ -32,8 +32,6 @@ import (
 	"github.com/kryneuse/alpha_proxy/internal/processor"
 	"github.com/kryneuse/alpha_proxy/internal/server"
 	"github.com/kryneuse/alpha_proxy/internal/store"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 func main() {
@@ -106,7 +104,7 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 		return contract.MockProcessor{}, func() {}, nil
 	}
 
-	conn, err := grpc.NewClient(cfg.MLAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := ml.NewConnection(cfg.MLAddress)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ml grpc client: %w", err)
 	}
@@ -132,7 +130,11 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ml grpc client: %w", err)
 	}
-	batcher, err = ml.NewBatcher(grpcClient, ml.DefaultBatchConfig())
+	batchCfg, err := ml.BatchConfigFromEnv()
+	if err != nil {
+		return nil, nil, fmt.Errorf("ml batch config: %w", err)
+	}
+	batcher, err = ml.NewBatcher(grpcClient, batchCfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create ml batcher: %w", err)
 	}
@@ -142,14 +144,20 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 	}
 
 	eng := engine.New(engine.Options{})
-	g := gate.New(gate.DefaultConfig())
-	casc := cascade.New(eng, g, nil, extractor)
+	casc := cascade.New(eng, extractor)
 	cascadeMasker, err := masking.NewCascadeMasker(casc, ml.DefaultChunkConfig(), 8)
 	if err != nil {
 		return nil, nil, fmt.Errorf("create cascade masker: %w", err)
 	}
 
-	st := store.NewMemoryStore(100000)
+	sessionCapacity := 100000
+	if value := os.Getenv("ALPHA_PROXY_SESSION_CAPACITY"); value != "" {
+		sessionCapacity, err = strconv.Atoi(value)
+		if err != nil || sessionCapacity <= 0 {
+			return nil, nil, fmt.Errorf("invalid ALPHA_PROXY_SESSION_CAPACITY")
+		}
+	}
+	st := store.NewMemoryStore(sessionCapacity)
 	pp := policy.NewStaticProvider(buildPolicies(cfg))
 	proc, err := processor.New(st, pp, cascadeMasker, 15*time.Minute)
 	if err != nil {
@@ -206,5 +214,8 @@ func allKinds() map[pii.PIIKind]bool {
 		pii.PIIKindCVV:              true,
 		pii.PIIKindPIN:              true,
 		pii.PIIKindPostalCode:       true,
+		pii.PIIKindCountry:          true,
+		pii.PIIKindRegion:           true,
+		pii.PIIKindDistrict:         true,
 	}
 }

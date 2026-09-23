@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/kryneuse/alpha_proxy/internal/entity"
-	"github.com/kryneuse/alpha_proxy/internal/gate"
 )
 
 type benchEngine struct{}
@@ -16,34 +15,27 @@ func (b *benchEngine) Analyze(text string) []entity.Entity {
 	}
 }
 
-type benchCheap struct{}
-
-func (b *benchCheap) HasPII(ctx context.Context, text string) (float64, error) {
-	return 0.2, nil
-}
-
 type benchExpensive struct{}
 
-func (b *benchExpensive) Detect(ctx context.Context, text string) ([]entity.Entity, error) {
+func (b *benchExpensive) Detect(ctx context.Context, original, gate string) ([]entity.Entity, error) {
 	return nil, nil
 }
 
 var benchChunk = "Клиент Иван Петров, паспорт 4510 123456, тел. +7 (912) 345-67-89"
 
-func BenchmarkCascadeSafe(b *testing.B) {
-	c := New(&benchEngine{}, gate.New(gate.DefaultConfig()), &benchCheap{}, &benchExpensive{})
-	ctx := context.Background()
+func BenchmarkCascadeAnalyzeRules(b *testing.B) {
+	c := New(&benchEngine{}, &benchExpensive{})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.Run(ctx, "сегодня хорошая погода")
+		c.AnalyzeRules(benchChunk)
 	}
 }
 
-func BenchmarkCascadeUncertain(b *testing.B) {
-	c := New(&benchEngine{}, gate.New(gate.DefaultConfig()), &benchCheap{}, &benchExpensive{})
+func BenchmarkCascadeDetectChunk(b *testing.B) {
+	c := New(&benchEngine{}, &benchExpensive{})
 	ctx := context.Background()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.Run(ctx, benchChunk)
+		c.DetectChunk(ctx, benchChunk, benchChunk)
 	}
 }

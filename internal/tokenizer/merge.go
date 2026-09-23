@@ -37,7 +37,7 @@ func CombinePlans(ctx context.Context, text string, mlPlan, backendPlan []pii.Re
 	}
 
 	merged := dedupe(validated)
-	selected, err := resolveOverlaps(ctx, merged)
+	selected, err := resolveOverlaps(ctx, text, merged)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,11 @@ func pickWinner(a, b pii.Replacement) pii.Replacement {
 	return b
 }
 
-func resolveOverlaps(ctx context.Context, replacements []pii.Replacement) ([]pii.Replacement, error) {
+// resolveOverlaps выбирает winner по приоритету, но не теряет непокрытые
+// части проигравших spans. Например, spans [0,10) и [5,15) закрывают весь
+// [0,15), а не оставляют хвост [10,15). Покрытие итогового плана равно
+// объединению всех принятых интервалов.
+func resolveOverlaps(ctx context.Context, text string, replacements []pii.Replacement) ([]pii.Replacement, error) {
 	candidates := make([]pii.Replacement, len(replacements))
 	copy(candidates, replacements)
 
@@ -128,28 +132,57 @@ func resolveOverlaps(ctx context.Context, replacements []pii.Replacement) ([]pii
 		return candidateLess(candidates[i], candidates[j])
 	})
 
-	selected := make([]pii.Replacement, 0, len(candidates))
+	var selected []pii.Replacement
 	for _, c := range candidates {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-
-		overlaps := false
-		for _, s := range selected {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			if spansOverlap(c, s) {
-				overlaps = true
-				break
-			}
-		}
-		if !overlaps {
-			selected = append(selected, c)
+		for _, u := range uncoveredSpans(c, selected) {
+			r := c
+			r.Start = u[0]
+			r.End = u[1]
+			r.Original = text[u[0]:u[1]]
+			selected = append(selected, r)
 		}
 	}
-
 	return selected, nil
+}
+
+// uncoveredSpans возвращает интервалы внутри [c.Start, c.End), не покрытые ни
+// одним span из selected.
+func uncoveredSpans(c pii.Replacement, selected []pii.Replacement) [][2]int {
+	sorted := make([]pii.Replacement, len(selected))
+	copy(sorted, selected)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Start != sorted[j].Start {
+			return sorted[i].Start < sorted[j].Start
+		}
+		return sorted[i].End < sorted[j].End
+	})
+
+	var out [][2]int
+	cursor := c.Start
+	for _, s := range sorted {
+		if s.End <= cursor {
+			continue
+		}
+		if s.Start >= c.End {
+			break
+		}
+		if s.Start > cursor {
+			out = append(out, [2]int{cursor, min(s.Start, c.End)})
+		}
+		if s.End > cursor {
+			cursor = max(cursor, s.End)
+		}
+		if cursor >= c.End {
+			break
+		}
+	}
+	if cursor < c.End {
+		out = append(out, [2]int{cursor, c.End})
+	}
+	return out
 }
 
 func candidateLess(a, b pii.Replacement) bool {

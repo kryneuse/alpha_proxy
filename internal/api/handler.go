@@ -14,6 +14,7 @@ import (
 
 	"github.com/kryneuse/alpha_proxy/internal/auth"
 	"github.com/kryneuse/alpha_proxy/internal/contract"
+	"github.com/kryneuse/alpha_proxy/internal/pii"
 	"github.com/kryneuse/alpha_proxy/internal/requestmeta"
 )
 
@@ -60,7 +61,7 @@ func (h *Handler) Process(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		switch {
-		case errors.Is(err, contract.ErrUnavailable):
+		case errors.Is(err, contract.ErrUnavailable), errors.Is(err, pii.ErrDetectorUnavailable), errors.Is(err, pii.ErrStoreUnavailable):
 			setErrorClass(r, "processor_unavailable")
 			http.Error(w, "processor unavailable", http.StatusServiceUnavailable)
 		case errors.Is(err, context.DeadlineExceeded):

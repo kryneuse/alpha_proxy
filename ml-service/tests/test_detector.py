@@ -1,96 +1,59 @@
-"""Integration tests for the gate and NER pipeline."""
-import os
-import sys
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+"""V2 integration parity against the same loaded model artifacts."""
+import json
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from ml_service.config import Config
 from ml_service.core.detector import PIIDetector
+from ml_service.core.v14_repair import repair_structured_v3
 
 
 @pytest.fixture(scope="module")
-def detector():
-    return PIIDetector(Config())
+def quality():
+    cfg = replace(Config(), backend="quality")
+    if not (Path(cfg.ner.dir) / "model.int8.onnx").exists():
+        pytest.skip("Quality artifacts not installed")
+    detector = PIIDetector(cfg)
+    yield detector
+    detector.close()
 
 
-def test_gate_closed_no_pii(detector):
-    text = "Сегодня хорошая погода. Мы гуляли в парке и обсуждали планы."
-    res = detector.detect_chunk("c1", text)
-    assert res.audit.gate_open is False
-    assert res.audit.gate_score < 0.001
-    assert res.entities == []
+@pytest.mark.parametrize("text", [
+    "Сегодня хорошая погода. Обсуждаем проект.",
+    "Иванов Пётр Сергеевич, тел. +7 999 123-45-67, email example@example.com",
+    "👩‍💻 Россия, г. Москва, ул. Тверская, дом 10, квартира 7.",
+    "Дата рождения 12.03.1991, паспорт выдан 20.04.2011, код 770-001.",
+])
+def test_quality_matches_gate_and_ner_reference(quality, text):
+    score = quality._gate.score(text)
+    result = quality.detect_chunk_v2("c", text, text)
+    assert result.error_code == "NONE"
+    assert result.audit.backend == "quality"
+    assert result.audit.gate_score == score
+    expected = repair_structured_v3(text, quality._ner.run(text)) if score >= quality._config.gate_threshold else []
+    assert {(e.type,e.start,e.end) for e in result.entities} == {(e['type'],e['start'],e['end']) for e in expected}
 
 
-def test_gate_open_with_phone(detector):
-    text = "Позвоните мне на +7 999 123-45-67"
-    res = detector.detect_chunk("c1", text)
-    assert res.audit.gate_open is True
-    assert "PHONE" in res.audit.matched_types
-    phones = [e for e in res.entities if e.type == "PHONE"]
-    assert phones
-    assert text[phones[0].start : phones[0].end] == "+7 999 123-45-67"
+def test_quality_blank_residual_preserves_existing_bypass(quality):
+    result = quality.detect_chunk_v2("c", "Иван", " " * len("Иван".encode()))
+    assert not result.audit.gate_ran
+    assert result.entities == []
 
 
-def test_full_name_normalization(detector):
-    text = "Меня зовут Иванов Пётр Сергеевич"
-    res = detector.detect_chunk("c1", text)
-    names = [e for e in res.entities if e.type == "FULL_NAME"]
-    assert names
-    assert text[names[0].start : names[0].end] == "Иванов Пётр Сергеевич"
-
-
-def test_email_detection(detector):
-    text = "Напишите на ivanov@mail.ru"
-    res = detector.detect_chunk("c1", text)
-    emails = [e for e in res.entities if e.type == "EMAIL"]
-    assert emails
-    assert text[emails[0].start : emails[0].end] == "ivanov@mail.ru"
-
-
-def test_offsets_are_unicode_code_points(detector):
-    # Cyrillic chars are 1 code point each; verify offsets align with slicing.
-    text = "Иванов Пётр, тел. +7 999 123-45-67"
-    res = detector.detect_chunk("c1", text)
-    for e in res.entities:
-        assert 0 <= e.start < e.end <= len(text)
-        assert text[e.start : e.end] != ""
-
-
-def test_ignored_types_do_not_open_gate(detector):
-    # ORG is an ignored type and must not open the gate by itself.
-    text = "ООО «Ромашка» занимается продажами"
-    res = detector.detect_chunk("c1", text)
-    # ORG may be detected but must not be in matched_types.
-    assert "ORG" not in res.audit.matched_types
-    assert "ORG" in res.audit.ignored_types or res.audit.gate_open is False
-
-
-def test_country_maps_to_address(detector):
-    # COUNTRY has no proto enum value; per product decision it is emitted as
-    # ADDRESS, while CITY/STREET/HOUSE stay separate entities.
-    text = "Россия, г. Москва, ул. Тверская, д. 10"
-    res = detector.detect_chunk("c1", text)
-    types = [e.type for e in res.entities]
-    assert "ADDRESS" in types
-    assert "CITY" in types
-    assert "STREET" in types
-    assert "HOUSE" in types
-    # Address components are not merged into one entity.
-    addresses = [e for e in res.entities if e.type == "ADDRESS"]
-    assert any(text[e.start : e.end] == "Россия" for e in addresses)
-
-
-def test_long_text_with_pii_at_end(detector):
-    # PII at the end of a long text must be detected (sliding windows + chunk
-    # offset recovery).
-    text = ("Это длинный текст без персональных данных. " * 50) + "Иванов Пётр, тел. +7 999 123-45-67"
-    res = detector.detect_chunk("c1", text)
-    assert res.audit.gate_open is True
-    types = [e.type for e in res.entities]
-    assert "FULL_NAME" in types
-    assert "PHONE" in types
-    # Offsets are relative to the full chunk text.
-    for e in res.entities:
-        assert 0 <= e.start < e.end <= len(text)
+def test_spacy_artifact_matches_transfer_fixtures():
+    cfg = replace(Config(), backend="spacy_sm")
+    if not (Path(cfg.spacy_dir) / "pii_multibio/model.bin").exists():
+        pytest.skip("spaCy artifact not installed")
+    fixture = Path(__file__).parent / "fixtures/spacy_transfer"
+    rows = [json.loads(line) for line in (fixture/'input.jsonl').read_text().split('\n') if line]
+    expected = [json.loads(line) for line in (fixture/'expected_repaired.jsonl').read_text().split('\n') if line]
+    detector = PIIDetector(cfg)
+    try:
+        for row, ref in zip(rows, expected, strict=True):
+            result = detector.detect_chunk_v2(row['id'], row['text'], ' '*len(row['text'].encode()))
+            assert result.error_code == "NONE"
+            assert {(e.type,e.start,e.end) for e in result.entities} == {(e['type'],e['start'],e['end']) for e in ref['entities']}
+    finally:
+        detector.close()

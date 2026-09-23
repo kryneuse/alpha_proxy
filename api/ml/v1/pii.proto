@@ -27,6 +27,28 @@ service PIIDetector {
   // должно прекращать работу при отмене context. gRPC не возвращает HTTP 429
   // — этим занимается внешний HTTP слой.
   rpc DetectBatch(DetectBatchRequest) returns (DetectBatchResponse);
+
+  // DetectBatchV2 — unary метод обработки одного batch с несколькими
+  // независимыми парами (original_text, gate_text).
+  //
+  // Семантика V2 отличается от V1: координаты сущностей в ответе всегда
+  // считаются относительно original_text соответствующего chunk. gate_text
+  // логически обязателен и используется только как вход обученного гейта;
+  // NER всегда получает original_text.
+  //
+  // Общие ошибки всего RPC (не отдельных chunks):
+  //   INVALID_ARGUMENT   — сломана структура всего batch (пустой batch_id,
+  //                        пустой список chunks, отсутствующий gate_text,
+  //                        неподдерживаемый offset_unit, некорректная пара).
+  //   FAILED_PRECONDITION — сервис сконфигурирован только на V2 и отклоняет
+  //                        старый DetectBatch.
+  //   RESOURCE_EXHAUSTED — очередь ML переполнена.
+  //   UNAVAILABLE        — ML временно недоступен.
+  //   DEADLINE_EXCEEDED  — превышен deadline запроса.
+  //
+  // Ошибки отдельных chunks передаются через ChunkErrorCode внутри
+  // ChunkResult, а не через статус RPC.
+  rpc DetectBatchV2(DetectBatchV2Request) returns (DetectBatchResponse);
 }
 
 // OffsetUnit — единица измерения координат сущностей.
@@ -66,6 +88,13 @@ enum EntityType {
   ENTITY_TYPE_CVV = 22;
   ENTITY_TYPE_PIN = 23;
   ENTITY_TYPE_POSTAL_CODE = 24;
+  // Новые типы для V2 (после текущих 0–24). Алиасы сохраняются:
+  // BIRTH_PLACE → PLACE_OF_BIRTH, CARD_NUMBER → CARD, POSTCODE → POSTAL_CODE.
+  ENTITY_TYPE_COUNTRY = 25;
+  ENTITY_TYPE_REGION = 26;
+  ENTITY_TYPE_DISTRICT = 27;
+  ENTITY_TYPE_DATE_OF_BIRTH = 28;
+  ENTITY_TYPE_PASSPORT_ISSUE_DATE = 29;
 }
 
 // ChunkErrorCode — машинный код ошибки для отдельного chunk.
@@ -134,7 +163,53 @@ message Chunk {
   string text = 2;
 }
 
-// DetectBatchResponse — ответ ML-сервиса на DetectBatchRequest.
+// DetectBatchV2Request — один запрос к ML-сервису с несколькими независимыми
+// парами (original_text, gate_text).
+//
+// Правила запроса:
+//   - batch_id должен быть непустым.
+//   - chunks должен содержать хотя бы один элемент.
+//   - chunk_id должен быть непустым и уникальным внутри batch.
+//   - original_text и gate_text должны быть валидным UTF-8.
+//   - gate_text логически обязателен. Его отсутствие (поле не задано) — это
+//     ошибка INVALID_ARGUMENT. Явно переданное пустое значение допустимо.
+//   - Байтовые длины original_text и gate_text должны совпадать: правила
+//     заменяют каждый байт найденного ПД ASCII-пробелом, поэтому оба среза
+//     относятся к одному участку payload и имеют одинаковую байтовую длину.
+//   - Лимит 350 Unicode code points относится к original_text. gate_text может
+//     содержать больше code points (замаскированная кириллица/emoji дают
+//     больше пробелов), но его байтовая длина равна байтовой длине
+//     original_text.
+//   - Координаты сущностей в ответе считаются в Unicode code points
+//     относительно начала original_text соответствующего chunk.
+message DetectBatchV2Request {
+  // batch_id связывает этот запрос с ответом DetectBatchResponse.
+  string batch_id = 1;
+
+  // offset_unit — единица измерения координат сущностей в ответе.
+  OffsetUnit offset_unit = 2;
+
+  // chunks — список независимых пар текста для обработки.
+  repeated ChunkV2 chunks = 3;
+}
+
+// ChunkV2 — один независимый фрагмент payload внутри batch V2.
+message ChunkV2 {
+  // chunk_id связывает этот chunk с результатом в DetectBatchResponse.
+  string chunk_id = 1;
+
+  // original_text — исходный текст чанка. NER всегда получает именно его.
+  // Координаты сущностей в ответе считаются относительно него.
+  string original_text = 2;
+
+  // gate_text — текст того же участка payload после маскирования правилами
+  // (byte-preserving). Используется только как вход обученного гейта.
+  // Логически обязателен; отсутствие поля — ошибка INVALID_ARGUMENT.
+  optional string gate_text = 3;
+}
+
+// DetectBatchResponse — ответ ML-сервиса на DetectBatchRequest или
+// DetectBatchV2Request.
 //
 // Правила ответа:
 //   - batch_id должен точно совпадать с batch_id из запроса.
@@ -146,6 +221,8 @@ message Chunk {
 //   - Если error_code не NONE, то entities должны быть пустыми.
 //   - У каждой entity тип не UNSPECIFIED, confidence от 0 до 1 и координаты
 //     0 <= start < end <= длина chunk в Unicode code points.
+//   - Для V2 координаты считаются относительно original_text соответствующего
+//     chunk. Для V1 — относительно text.
 message DetectBatchResponse {
   // batch_id повторяет batch_id из запроса, чтобы backend мог сопоставить
   // ответ с конкретным запросом.
@@ -194,5 +271,11 @@ message Entity {
   int32 end = 3;
 
   // confidence — уверенность модели в найденной сущности от 0 до 1.
+  //
+  // Для V2 confidence=1.0 у принятого моделью span является служебным score
+  // принятого решения, а не вероятностью и не обещанием 100% точности.
+  // Это адаптация контракта, а не часть обученной модели: reference runtime
+  // не выдаёт span confidence и не применяет дополнительный порог отсечения
+  // NER. Не интерпретировать это значение как вероятность.
   float confidence = 4;
 }
