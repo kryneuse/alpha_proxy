@@ -45,6 +45,7 @@ func New(opts Options) *Engine {
 		recognizer.NewBirthPlaceRecognizer(),
 		recognizer.NewFullNameRecognizer(nil, nil, nil),
 		recognizer.NewAddressRecognizer(nil),
+		recognizer.NewIdentityDocumentRecognizer(),
 	)
 	return &Engine{
 		registry: reg,

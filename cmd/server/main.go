@@ -263,5 +263,6 @@ func allKinds() map[pii.PIIKind]bool {
 		pii.PIIKindCVV:              true,
 		pii.PIIKindPIN:              true,
 		pii.PIIKindPostalCode:       true,
+		pii.PIIKindIdentityDocument: true,
 	}
 }

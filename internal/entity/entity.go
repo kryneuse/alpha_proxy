@@ -24,15 +24,51 @@ const (
 	CVV                 Type = "CVV"
 	PIN                 Type = "PIN"
 	CARDHOLDER_NAME     Type = "CARDHOLDER_NAME"
+	// IDENTITY_DOCUMENT is a bonus type covering identity documents other than
+	// the Russian passport. The concrete document family is carried in Subtype.
+	IDENTITY_DOCUMENT Type = "IDENTITY_DOCUMENT"
 )
 
-// AllTypes returns every supported entity type.
-func AllTypes() []Type {
+// DocumentSubtype identifies a family of identity documents covered by
+// IDENTITY_DOCUMENT.
+type DocumentSubtype string
+
+const (
+	// ForeignPassportRF is a Russian international passport (загранпаспорт).
+	ForeignPassportRF DocumentSubtype = "foreign_passport_rf"
+	// BirthCertificate is a Russian birth certificate (свидетельство о рождении).
+	BirthCertificate DocumentSubtype = "birth_certificate"
+	// MilitaryID is a Russian military ID / temporary certificate in lieu of it.
+	MilitaryID DocumentSubtype = "military_id"
+	// TemporaryIDRF is a temporary identity document of a Russian citizen (форма 2П).
+	TemporaryIDRF DocumentSubtype = "temporary_id_rf"
+)
+
+// RequiredTypes returns the mandatory 17 personal-data entity types. This list
+// is used by the existing evaluator and must not change.
+func RequiredTypes() []Type {
 	return []Type{
 		FULL_NAME, BIRTH_DATE, BIRTH_PLACE, PASSPORT, CITIZENSHIP,
 		PASSPORT_ISSUER, DEPARTMENT_CODE, PASSPORT_ISSUE_DATE, DRIVER_LICENSE,
 		ADDRESS, EMAIL, PHONE, INN, CARD_NUMBER, CVV, PIN, CARDHOLDER_NAME,
 	}
+}
+
+// BonusTypes returns the additive bonus entity types (identity documents).
+func BonusTypes() []Type {
+	return []Type{IDENTITY_DOCUMENT}
+}
+
+// AllTypes returns the mandatory 17 personal-data entity types. It is kept for
+// backward compatibility with the existing evaluator, which iterates over the
+// mandatory types only.
+func AllTypes() []Type {
+	return RequiredTypes()
+}
+
+// AllRecognizableTypes returns every supported entity type (required + bonus).
+func AllRecognizableTypes() []Type {
+	return append(RequiredTypes(), BonusTypes()...)
 }
 
 // Source describes how a candidate was produced.
@@ -50,6 +86,7 @@ const (
 // Offsets are always relative to the ORIGINAL input text.
 type CandidateSpan struct {
 	Type       Type
+	Subtype    DocumentSubtype
 	Text       string
 	Start      int
 	End        int
@@ -94,10 +131,11 @@ func (c CandidateSpan) EvidenceStrength() int {
 
 // Entity is the final, resolved personal-data entity returned by the engine.
 type Entity struct {
-	Type   Type
-	Text   string
-	Start  int
-	End    int
-	Score  float64
-	Reason string
+	Type    Type
+	Subtype DocumentSubtype
+	Text    string
+	Start   int
+	End     int
+	Score   float64
+	Reason  string
 }

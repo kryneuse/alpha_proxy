@@ -141,6 +141,33 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 			boost = s.keywordBoost
 			contextual = true
 		}
+	case entity.IDENTITY_DOCUMENT:
+		// Identity documents require explicit document context. The boost is
+		// applied per subtype so a foreign passport is not boosted by a birth
+		// certificate keyword and vice versa.
+		pre := s.preceding(norm, span.Start, 80)
+		switch span.Subtype {
+		case entity.ForeignPassportRF:
+			if containsAny(pre, dict.ForeignPassportKeywords) {
+				boost = s.keywordBoost
+				contextual = true
+			}
+		case entity.BirthCertificate:
+			if containsAny(pre, dict.BirthCertificateKeywords) {
+				boost = s.keywordBoost
+				contextual = true
+			}
+		case entity.MilitaryID:
+			if containsAny(pre, dict.MilitaryIDKeywords) {
+				boost = s.keywordBoost
+				contextual = true
+			}
+		case entity.TemporaryIDRF:
+			if containsAny(pre, dict.TemporaryIDRFKeywords) {
+				boost = s.keywordBoost
+				contextual = true
+			}
+		}
 	}
 
 	// Negative context suppression.
@@ -186,6 +213,12 @@ func (s *Scorer) Score(norm *normalize.Text, span entity.CandidateSpan) (entity.
 		}
 	case entity.INN:
 		if containsAny(s.preceding(norm, span.Start, 60), dict.OrderArticleKeywords) {
+			boost -= s.keywordSuppress
+		}
+		// A 12-digit number that is a valid INN but appears in explicit
+		// temporary-ID document context should be treated as the document, not
+		// as an INN. Suppress the INN so the document candidate wins.
+		if containsAny(s.preceding(norm, span.Start, 80), dict.TemporaryIDRFKeywords) {
 			boost -= s.keywordSuppress
 		}
 	case entity.PHONE:

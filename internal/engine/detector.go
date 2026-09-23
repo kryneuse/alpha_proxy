@@ -42,6 +42,9 @@ func (e *Engine) Detect(ctx context.Context, text string) ([]pii.Entity, error) 
 			Confidence: re.Score,
 			Source:     pii.SourceReg,
 		})
+		if re.Subtype != "" {
+			result[len(result)-1].Metadata = map[string]string{"document_subtype": string(re.Subtype)}
+		}
 	}
 
 	return result, nil
@@ -83,6 +86,8 @@ func mapKind(t entity.Type) (pii.PIIKind, bool) {
 		return pii.PIIKindPIN, true
 	case entity.CARDHOLDER_NAME:
 		return pii.PIIKindCardHolderName, true
+	case entity.IDENTITY_DOCUMENT:
+		return pii.PIIKindIdentityDocument, true
 	default:
 		return "", false
 	}

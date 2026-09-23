@@ -29,6 +29,10 @@ const (
 	PIIKindCVV              PIIKind = "cvv"
 	PIIKindPIN              PIIKind = "pin"
 	PIIKindPostalCode       PIIKind = "postal_code"
+	// PIIKindIdentityDocument is a bonus kind covering identity documents other
+	// than the Russian passport (foreign passport RF, birth certificate,
+	// military ID, temporary ID). The concrete subtype is carried in metadata.
+	PIIKindIdentityDocument PIIKind = "identity_document"
 )
 
 type Source string

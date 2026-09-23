@@ -384,7 +384,8 @@ func validPIIKind(s string) bool {
 		pii.PIIKindCardHolderName, pii.PIIKindEmail, pii.PIIKindPhone,
 		pii.PIIKindINN, pii.PIIKindBankCard, pii.PIIKindPassport,
 		pii.PIIKindPassportDivision, pii.PIIKindDate, pii.PIIKindDriverLicense,
-		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode:
+		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode,
+		pii.PIIKindIdentityDocument:
 		return true
 	default:
 		return false

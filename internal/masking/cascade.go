@@ -179,6 +179,9 @@ func (m *CascadeMasker) processChunk(ctx context.Context, chunk ml.TextChunk) (c
 			Confidence: en.Score,
 			Source:     source,
 		}
+		if en.Subtype != "" {
+			pe.Metadata = map[string]string{"document_subtype": string(en.Subtype)}
+		}
 		if source == pii.SourceML {
 			out.ml = append(out.ml, pe)
 		} else {
@@ -223,6 +226,8 @@ func mapEntityType(t entity.Type) (pii.PIIKind, bool) {
 		return pii.PIIKindPIN, true
 	case entity.CARDHOLDER_NAME:
 		return pii.PIIKindCardHolderName, true
+	case entity.IDENTITY_DOCUMENT:
+		return pii.PIIKindIdentityDocument, true
 	default:
 		return "", false
 	}

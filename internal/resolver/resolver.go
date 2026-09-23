@@ -76,12 +76,13 @@ func (r *Resolver) Resolve(spans []entity.CandidateSpan) []entity.Entity {
 	entities := make([]entity.Entity, 0, len(resolved))
 	for _, s := range resolved {
 		entities = append(entities, entity.Entity{
-			Type:   s.Type,
-			Text:   s.Text,
-			Start:  s.Start,
-			End:    s.End,
-			Score:  s.Score,
-			Reason: s.Reason,
+			Type:    s.Type,
+			Subtype: s.Subtype,
+			Text:    s.Text,
+			Start:   s.Start,
+			End:     s.End,
+			Score:   s.Score,
+			Reason:  s.Reason,
 		})
 	}
 
