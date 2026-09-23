@@ -43,6 +43,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ParallelLimit != 512 {
 		t.Errorf("ParallelLimit = %d, want default 512", cfg.ParallelLimit)
 	}
+	if !cfg.MetricsEnabled {
+		t.Errorf("MetricsEnabled = false, want default true")
+	}
 }
 
 func TestLoadDefaultsFailWithoutEnabledSystem(t *testing.T) {
@@ -186,6 +189,62 @@ func TestLoadInvalidFloatEnv(t *testing.T) {
 	}
 }
 
+func TestLoadMetricsEnabledTrue(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	if err := os.WriteFile(path, []byte(`[{"id":"sys-a","enabled":true,"api_key":"secret-a"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+	t.Setenv("ALPHA_PROXY_METRICS_ENABLED", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.MetricsEnabled {
+		t.Errorf("MetricsEnabled = false, want true")
+	}
+}
+
+func TestLoadMetricsEnabledFalse(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	if err := os.WriteFile(path, []byte(`[{"id":"sys-a","enabled":true,"api_key":"secret-a"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+	t.Setenv("ALPHA_PROXY_METRICS_ENABLED", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.MetricsEnabled {
+		t.Errorf("MetricsEnabled = true, want false")
+	}
+}
+
+func TestLoadMetricsEnabledInvalid(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("ALPHA_PROXY_METRICS_ENABLED", "not-a-bool")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for invalid bool")
+	}
+	if !IsEnvParseError(err) {
+		t.Fatalf("expected env parse error, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "ALPHA_PROXY_METRICS_ENABLED") {
+		t.Errorf("error must name the parameter, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "not-a-bool") {
+		t.Errorf("error must not include the value, got: %v", err)
+	}
+}
+
 func TestLoadInvalidDurationEnv(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("ALPHA_PROXY_READ_TIMEOUT", "not-a-duration")
@@ -298,6 +357,85 @@ func TestLoadSystemsFromFile(t *testing.T) {
 	}
 }
 
+func TestLoadShutdownTimeoutDefault(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	if err := os.WriteFile(path, []byte(`[{"id":"sys-a","enabled":true,"api_key":"secret-a"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.ShutdownTimeout != 15*time.Second {
+		t.Errorf("ShutdownTimeout = %v, want 15s", cfg.ShutdownTimeout)
+	}
+}
+
+func TestLoadShutdownTimeoutEnv(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	if err := os.WriteFile(path, []byte(`[{"id":"sys-a","enabled":true,"api_key":"secret-a"}]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+	t.Setenv("ALPHA_PROXY_SHUTDOWN_TIMEOUT", "30s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.ShutdownTimeout != 30*time.Second {
+		t.Errorf("ShutdownTimeout = %v, want 30s", cfg.ShutdownTimeout)
+	}
+}
+
+func TestLoadShutdownTimeoutInvalid(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("ALPHA_PROXY_SHUTDOWN_TIMEOUT", "not-a-duration")
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for invalid shutdown timeout")
+	}
+	if !IsEnvParseError(err) {
+		t.Fatalf("expected env parse error, got %T: %v", err, err)
+	}
+	if !strings.Contains(err.Error(), "ALPHA_PROXY_SHUTDOWN_TIMEOUT") {
+		t.Errorf("error must name the parameter, got: %v", err)
+	}
+	if strings.Contains(err.Error(), "not-a-duration") {
+		t.Errorf("error must not include the value, got: %v", err)
+	}
+}
+
+func TestValidateShutdownTimeoutZero(t *testing.T) {
+	base := validConfig()
+	base.ShutdownTimeout = 0
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: zero shutdown timeout")
+	}
+}
+
+func TestValidateShutdownTimeoutNegative(t *testing.T) {
+	base := validConfig()
+	base.ShutdownTimeout = -time.Second
+	if err := base.Validate(); err == nil {
+		t.Fatal("expected error: negative shutdown timeout")
+	}
+}
+
+func TestValidateShutdownTimeoutPositive(t *testing.T) {
+	base := validConfig()
+	base.ShutdownTimeout = 5 * time.Second
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid shutdown timeout rejected: %v", err)
+	}
+}
+
 func validConfig() Config {
 	return Config{
 		Addr:                   ":8080",
@@ -313,6 +451,7 @@ func validConfig() Config {
 		GlobalRateLimitBurst:   2000,
 		ConsumerRateLimitRPS:   0,
 		ConsumerRateLimitBurst: 0,
+		ShutdownTimeout:        15 * time.Second,
 		RunMode:                RunModeFinal,
 		AuthMode:               AuthModeAPIKey,
 		ProcessorMode:          ProcessorReal,
@@ -336,6 +475,8 @@ func clearEnv(t *testing.T) {
 		"ALPHA_PROXY_GLOBAL_RATE_LIMIT_BURST",
 		"ALPHA_PROXY_CONSUMER_RATE_LIMIT_RPS",
 		"ALPHA_PROXY_CONSUMER_RATE_LIMIT_BURST",
+		"ALPHA_PROXY_METRICS_ENABLED",
+		"ALPHA_PROXY_SHUTDOWN_TIMEOUT",
 		"ALPHA_PROXY_RUN_MODE",
 		"ALPHA_PROXY_AUTH_MODE",
 		"ALPHA_PROXY_PROCESSOR_MODE",
