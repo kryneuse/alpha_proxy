@@ -124,6 +124,12 @@ Checks performed:
 ML models are **not** downloaded in CI; the ML image build only verifies that
 runtime dependencies install and the Dockerfile is valid.
 
+## CD
+
+Images are delivered automatically to GHCR after a successful CI run on `main`.
+Production deployment is performed manually. See
+[`deploy/README.md`](deploy/README.md) for details.
+
 ## Extension points
 
 The architecture is designed so the following can be added without rewriting
