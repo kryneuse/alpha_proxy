@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/kryneuse/alpha_proxy/internal/config"
+	"github.com/kryneuse/alpha_proxy/internal/contract"
 )
 
 func TestRunRejectsNilContext(t *testing.T) {
@@ -81,4 +84,50 @@ func setDevEnv(t *testing.T) {
 	t.Setenv("ALPHA_PROXY_CONSUMER_RATE_LIMIT_BURST", "0")
 	t.Setenv("ALPHA_PROXY_SHUTDOWN_TIMEOUT", "1s")
 	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", "")
+}
+
+func TestBuildProcessorReal(t *testing.T) {
+	cfg := config.Config{
+		RunMode:       config.RunModeVerify,
+		AuthMode:      config.AuthModeVerify,
+		ProcessorMode: config.ProcessorReal,
+		MLAddress:     "127.0.0.1:50051",
+	}
+	proc, cleanup, err := buildProcessor(cfg)
+	if err != nil {
+		t.Fatalf("buildProcessor returned error: %v", err)
+	}
+	if proc == nil {
+		t.Fatal("expected non-nil processor")
+	}
+	cleanup()
+	cleanup() // повторный вызов не должен паниковать
+}
+
+func TestBuildProcessorMock(t *testing.T) {
+	cfg := config.Config{
+		RunMode:       config.RunModeDev,
+		AuthMode:      config.AuthModeVerify,
+		ProcessorMode: config.ProcessorMock,
+	}
+	proc, cleanup, err := buildProcessor(cfg)
+	if err != nil {
+		t.Fatalf("buildProcessor returned error: %v", err)
+	}
+	if _, ok := proc.(contract.MockProcessor); !ok {
+		t.Fatalf("expected MockProcessor, got %T", proc)
+	}
+	cleanup()
+	cleanup()
+}
+
+func TestBuildProcessorMockNotInDev(t *testing.T) {
+	cfg := config.Config{
+		RunMode:       config.RunModeVerify,
+		AuthMode:      config.AuthModeVerify,
+		ProcessorMode: config.ProcessorMock,
+	}
+	if _, _, err := buildProcessor(cfg); err == nil {
+		t.Fatal("expected error for mock processor outside dev mode")
+	}
 }

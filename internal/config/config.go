@@ -69,6 +69,8 @@ type Config struct {
 	AuthMode          AuthMode
 	ProcessorMode     ProcessorMode
 	Systems           []System
+	// MLAddress is the gRPC target of the Python ML service.
+	MLAddress string
 
 	// GlobalRateLimitRPS is the global token bucket rate in requests per second.
 	// Zero disables the global limiter.
@@ -104,6 +106,7 @@ func Load() (Config, error) {
 		RunMode:       RunMode(envOr("ALPHA_PROXY_RUN_MODE", string(RunModeFinal))),
 		AuthMode:      AuthMode(envOr("ALPHA_PROXY_AUTH_MODE", string(AuthModeAPIKey))),
 		ProcessorMode: ProcessorMode(envOr("ALPHA_PROXY_PROCESSOR_MODE", string(ProcessorReal))),
+		MLAddress:     envOr("ALPHA_PROXY_ML_ADDR", "127.0.0.1:50051"),
 	}
 
 	if v, err := durEnv("ALPHA_PROXY_READ_TIMEOUT", 10*time.Second); err != nil {
@@ -199,6 +202,9 @@ func Load() (Config, error) {
 func (c Config) Validate() error {
 	if c.Addr == "" {
 		return fmt.Errorf("config: addr must not be empty")
+	}
+	if c.MLAddress == "" {
+		return fmt.Errorf("config: ml address must not be empty")
 	}
 	if c.ReadTimeout <= 0 || c.ReadHeaderTimeout <= 0 || c.WriteTimeout <= 0 || c.IdleTimeout <= 0 {
 		return fmt.Errorf("config: http timeouts must be strictly positive")

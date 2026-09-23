@@ -34,6 +34,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ProcessorMode != ProcessorReal {
 		t.Errorf("ProcessorMode = %q, want real", cfg.ProcessorMode)
 	}
+	if cfg.MLAddress != "127.0.0.1:50051" {
+		t.Errorf("MLAddress = %q, want default 127.0.0.1:50051", cfg.MLAddress)
+	}
 	if cfg.ReadHeaderTimeout <= 0 {
 		t.Errorf("ReadHeaderTimeout must be positive, got %v", cfg.ReadHeaderTimeout)
 	}
@@ -456,6 +459,7 @@ func validConfig() Config {
 		AuthMode:               AuthModeAPIKey,
 		ProcessorMode:          ProcessorReal,
 		Systems:                []System{{ID: "sys-a", Enabled: true, APIKey: "secret-a"}},
+		MLAddress:              "127.0.0.1:50051",
 	}
 }
 
@@ -481,7 +485,30 @@ func clearEnv(t *testing.T) {
 		"ALPHA_PROXY_AUTH_MODE",
 		"ALPHA_PROXY_PROCESSOR_MODE",
 		"ALPHA_PROXY_SYSTEMS_FILE",
+		"ALPHA_PROXY_ML_ADDR",
 	} {
 		t.Setenv(k, "")
+	}
+}
+
+func TestValidateEmptyMLAddress(t *testing.T) {
+	cfg := Config{
+		Addr:               ":8080",
+		ReadTimeout:        time.Second,
+		ReadHeaderTimeout:  time.Second,
+		WriteTimeout:       time.Second,
+		IdleTimeout:        time.Second,
+		BodyLimit:          1024,
+		ProcessingTimeout:  time.Second,
+		ParallelLimit:      1,
+		OverloadRetryAfter: time.Second,
+		ShutdownTimeout:    time.Second,
+		RunMode:            RunModeVerify,
+		AuthMode:           AuthModeVerify,
+		ProcessorMode:      ProcessorReal,
+		MLAddress:          "",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for empty ml address")
 	}
 }
