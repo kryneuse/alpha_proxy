@@ -57,8 +57,10 @@ type Cascade struct {
 	expensive ExpensiveExtractor
 }
 
-// New builds a cascade. cheap and expensive may be nil; if a route requires
-// them and they are nil, the cascade fails closed (returns an error).
+// New builds a cascade. cheap is an optional future optimization; when nil,
+// UNCERTAIN routes straight to the expensive extractor (the Python ML service
+// runs its own internal classifier inside DetectBatch). expensive may be nil;
+// if a route requires it and it is nil, the cascade fails closed.
 func New(engine RuleEngine, g *gate.Gate, cheap CheapClassifier, expensive ExpensiveExtractor) *Cascade {
 	return &Cascade{
 		engine:    engine,
@@ -92,10 +94,11 @@ func (c *Cascade) Run(ctx context.Context, chunk string) (Result, error) {
 		return res, nil
 
 	case gate.UNCERTAIN:
-		// Consult the cheap classifier.
+		// Consult the cheap classifier if configured. When cheap is nil, route
+		// straight to the expensive extractor: the Python ML service runs its
+		// own internal classifier inside DetectBatch.
 		if c.cheap == nil {
-			// Fail closed: we cannot confirm the residual is clean.
-			return res, errFailClosed("cheap classifier unavailable for UNCERTAIN route")
+			return c.runExpensive(ctx, res)
 		}
 		res.CheapInvoked = true
 		score, err := c.cheap.HasPII(ctx, residualText)

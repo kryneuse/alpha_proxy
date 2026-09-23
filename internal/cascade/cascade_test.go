@@ -214,15 +214,19 @@ func TestResidualCyrillicOffsets(t *testing.T) {
 	}
 }
 
-// TestFailClosedCheapNil asserts that UNCERTAIN with nil cheap fails closed.
-func TestFailClosedCheapNil(t *testing.T) {
+// TestUncertainNilCheapRoutesToExpensive asserts that UNCERTAIN with nil cheap
+// routes straight to the expensive extractor and does not return an error.
+func TestUncertainNilCheapRoutesToExpensive(t *testing.T) {
 	engine := &fakeEngine{}
 	expensive := &fakeExpensive{}
 	g := gate.New(gate.DefaultConfig())
 	c := New(engine, g, nil, expensive)
 	_, err := c.Run(context.Background(), "Иван Петров")
-	if err == nil {
-		t.Error("expected error when cheap classifier is nil on UNCERTAIN route")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if expensive.calls != 1 {
+		t.Fatalf("expected expensive extractor to be called once, got %d", expensive.calls)
 	}
 }
 
