@@ -120,11 +120,20 @@ sendLoop:
 		backendEntities = append(backendEntities, r.backend...)
 	}
 
-	mlPlan, err := tokenizer.BuildReplacementPlan(ctx, text, mlEntities, policy)
+	// Payload-level confirmed PII kinds: computed from ALL entities across all
+	// chunks and both sources (rules + ML). This is what MaskConditions are
+	// evaluated against, so a supporting kind from another chunk or source
+	// satisfies the condition.
+	allEntities := make([]pii.Entity, 0, len(mlEntities)+len(backendEntities))
+	allEntities = append(allEntities, mlEntities...)
+	allEntities = append(allEntities, backendEntities...)
+	confirmed := policy.ConfirmedKinds(allEntities)
+
+	mlPlan, err := tokenizer.BuildReplacementPlanWithConfirmed(ctx, text, mlEntities, policy, confirmed)
 	if err != nil {
 		return "", nil, err
 	}
-	backendPlan, err := tokenizer.BuildReplacementPlan(ctx, text, backendEntities, policy)
+	backendPlan, err := tokenizer.BuildReplacementPlanWithConfirmed(ctx, text, backendEntities, policy, confirmed)
 	if err != nil {
 		return "", nil, err
 	}

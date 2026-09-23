@@ -10,6 +10,19 @@ import (
 )
 
 func BuildReplacementPlan(ctx context.Context, text string, entities []pii.Entity, policy pii.Policy) ([]pii.Replacement, error) {
+	// Backward-compatible entry point: compute confirmed kinds from the given
+	// entities. Callers that need payload-level conditions (entities split
+	// across ml/backend or chunks) should use BuildReplacementPlanWithConfirmed.
+	confirmed := policy.ConfirmedKinds(entities)
+	return BuildReplacementPlanWithConfirmed(ctx, text, entities, policy, confirmed)
+}
+
+// BuildReplacementPlanWithConfirmed builds a replacement plan applying
+// conditional masking. `confirmed` is the payload-level set of confirmed PII
+// kinds used to evaluate MaskConditions; it must be computed from ALL entities
+// of the payload (not just the ones passed here) so that supporting kinds from
+// other chunks/sources satisfy the condition.
+func BuildReplacementPlanWithConfirmed(ctx context.Context, text string, entities []pii.Entity, policy pii.Policy, confirmed map[pii.PIIKind]bool) ([]pii.Replacement, error) {
 	sorted := make([]pii.Entity, len(entities))
 	copy(sorted, entities)
 
@@ -36,6 +49,9 @@ func BuildReplacementPlan(ctx context.Context, text string, entities []pii.Entit
 			continue
 		}
 		if entity.Confidence < policy.MinConfidence {
+			continue
+		}
+		if !policy.MaskAllowed(entity.Kind, confirmed) {
 			continue
 		}
 

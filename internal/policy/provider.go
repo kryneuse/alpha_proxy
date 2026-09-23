@@ -40,5 +40,18 @@ func clonePolicy(pol pii.Policy) pii.Policy {
 			clone.AllowedKinds[kind] = allowed
 		}
 	}
+	if pol.MaskConditions != nil {
+		clone.MaskConditions = make(map[pii.PIIKind]pii.MaskCondition, len(pol.MaskConditions))
+		for kind, cond := range pol.MaskConditions {
+			cc := pii.MaskCondition{}
+			if cond.RequiresAny != nil {
+				cc.RequiresAny = append([]pii.PIIKind(nil), cond.RequiresAny...)
+			}
+			if cond.RequiresAll != nil {
+				cc.RequiresAll = append([]pii.PIIKind(nil), cond.RequiresAll...)
+			}
+			clone.MaskConditions[kind] = cc
+		}
+	}
 	return clone
 }

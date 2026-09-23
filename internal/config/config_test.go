@@ -512,3 +512,91 @@ func TestValidateEmptyMLAddress(t *testing.T) {
 		t.Fatal("expected error for empty ml address")
 	}
 }
+
+func TestValidateMaskingConditionsValid(t *testing.T) {
+	base := validConfig()
+	base.Systems = []System{{
+		ID: "sys-a", Enabled: true, APIKey: "secret-a",
+		MaskingConditions: map[string]MaskConditionConfig{
+			"pin": {RequiresAll: []string{"card"}},
+		},
+	}}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("valid masking_conditions rejected: %v", err)
+	}
+}
+
+func TestValidateMaskingConditionsUnknownTarget(t *testing.T) {
+	base := validConfig()
+	base.Systems = []System{{
+		ID: "sys-a", Enabled: true, APIKey: "secret-a",
+		MaskingConditions: map[string]MaskConditionConfig{
+			"not_a_kind": {RequiresAll: []string{"card"}},
+		},
+	}}
+	err := base.Validate()
+	if err == nil {
+		t.Fatal("expected error for unknown masking_conditions target kind")
+	}
+	if !strings.Contains(err.Error(), "unknown masking_conditions target kind") {
+		t.Fatalf("expected clear error, got: %v", err)
+	}
+}
+
+func TestValidateMaskingConditionsUnknownRequired(t *testing.T) {
+	base := validConfig()
+	base.Systems = []System{{
+		ID: "sys-a", Enabled: true, APIKey: "secret-a",
+		MaskingConditions: map[string]MaskConditionConfig{
+			"pin": {RequiresAll: []string{"not_a_kind"}},
+		},
+	}}
+	err := base.Validate()
+	if err == nil {
+		t.Fatal("expected error for unknown requires_all kind")
+	}
+	if !strings.Contains(err.Error(), "unknown requires_all kind") {
+		t.Fatalf("expected clear error, got: %v", err)
+	}
+}
+
+func TestValidateMaskingConditionsEmptyAllowed(t *testing.T) {
+	// An empty condition (always satisfied) is allowed: it explicitly disables
+	// any default dependency for that kind.
+	base := validConfig()
+	base.Systems = []System{{
+		ID: "sys-a", Enabled: true, APIKey: "secret-a",
+		MaskingConditions: map[string]MaskConditionConfig{
+			"pin": {},
+		},
+	}}
+	if err := base.Validate(); err != nil {
+		t.Fatalf("empty masking_conditions should be allowed, got: %v", err)
+	}
+}
+
+func TestLoadMaskingConditionsFromFile(t *testing.T) {
+	clearEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "systems.json")
+	content := `[{"id":"sys-a","enabled":true,"api_key":"secret-a","masking_conditions":{"pin":{"requires_all":["card"]}}}]`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ALPHA_PROXY_SYSTEMS_FILE", path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if len(cfg.Systems) != 1 {
+		t.Fatalf("unexpected systems: %+v", cfg.Systems)
+	}
+	cond, ok := cfg.Systems[0].MaskingConditions["pin"]
+	if !ok {
+		t.Fatal("expected masking_conditions for pin")
+	}
+	if len(cond.RequiresAll) != 1 || cond.RequiresAll[0] != "card" {
+		t.Fatalf("unexpected requires_all: %v", cond.RequiresAll)
+	}
+}

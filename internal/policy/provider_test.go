@@ -127,3 +127,56 @@ func TestDefensiveCopyOnGet(t *testing.T) {
 		t.Fatalf("stored MaskingStrategy was mutated via Get result, got %q", again.MaskingStrategy)
 	}
 }
+
+func TestDefensiveCopyMaskConditions(t *testing.T) {
+	policies := map[string]pii.Policy{
+		"consumer-1": {
+			AllowedKinds:  map[pii.PIIKind]bool{pii.PIIKindPIN: true, pii.PIIKindBankCard: true},
+			MinConfidence: 0.5,
+			MaskConditions: map[pii.PIIKind]pii.MaskCondition{
+				pii.PIIKindPIN: {
+					RequiresAll: []pii.PIIKind{pii.PIIKindBankCard},
+					RequiresAny: []pii.PIIKind{pii.PIIKindBankCard, pii.PIIKindCVV},
+				},
+			},
+		},
+	}
+	p := NewStaticProvider(policies)
+
+	// Mutate the input map's nested MaskConditions after creation.
+	pol := policies["consumer-1"]
+	cond := pol.MaskConditions[pii.PIIKindPIN]
+	cond.RequiresAll[0] = pii.PIIKindCVV
+	cond.RequiresAny = append(cond.RequiresAny, pii.PIIKindPhone)
+	pol.MaskConditions[pii.PIIKindPIN] = cond
+	policies["consumer-1"] = pol
+
+	got, err := p.Get(context.Background(), "consumer-1")
+	if err != nil {
+		t.Fatalf("Get returned error: %v", err)
+	}
+	gotCond := got.MaskConditions[pii.PIIKindPIN]
+	if len(gotCond.RequiresAll) != 1 || gotCond.RequiresAll[0] != pii.PIIKindBankCard {
+		t.Fatalf("stored RequiresAll was mutated via input map: %v", gotCond.RequiresAll)
+	}
+	if len(gotCond.RequiresAny) != 2 {
+		t.Fatalf("stored RequiresAny was mutated via input map: %v", gotCond.RequiresAny)
+	}
+
+	// Mutate the returned policy's nested MaskConditions.
+	gotCond.RequiresAll[0] = pii.PIIKindPhone
+	gotCond.RequiresAny = nil
+	got.MaskConditions[pii.PIIKindPIN] = gotCond
+
+	again, err := p.Get(context.Background(), "consumer-1")
+	if err != nil {
+		t.Fatalf("second Get returned error: %v", err)
+	}
+	cond2 := again.MaskConditions[pii.PIIKindPIN]
+	if len(cond2.RequiresAll) != 1 || cond2.RequiresAll[0] != pii.PIIKindBankCard {
+		t.Fatalf("stored RequiresAll was mutated via Get result: %v", cond2.RequiresAll)
+	}
+	if len(cond2.RequiresAny) != 2 {
+		t.Fatalf("stored RequiresAny was mutated via Get result: %v", cond2.RequiresAny)
+	}
+}

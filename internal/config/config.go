@@ -11,6 +11,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/kryneuse/alpha_proxy/internal/pii"
 )
 
 // RunMode selects the operating mode of the service.
@@ -48,11 +50,22 @@ const (
 	ProcessorReal ProcessorMode = "real"
 )
 
+// MaskConditionConfig is the JSON form of a conditional-masking rule for one
+// PII kind. It is optional; a kind absent from MaskingConditions keeps the
+// legacy behavior (maskable on its own).
+type MaskConditionConfig struct {
+	RequiresAny []string `json:"requires_any"`
+	RequiresAll []string `json:"requires_all"`
+}
+
 // System is a configured consumer system.
 type System struct {
 	ID      string `json:"id"`
 	Enabled bool   `json:"enabled"`
 	APIKey  string `json:"api_key"`
+	// MaskingConditions maps a target PII kind (string form, e.g. "pin") to a
+	// conditional-masking rule. Optional; legacy behavior when absent.
+	MaskingConditions map[string]MaskConditionConfig `json:"masking_conditions"`
 }
 
 // Config holds all settings needed to run the HTTP contour.
@@ -327,11 +340,55 @@ func validateSystems(systems []System) error {
 		if s.Enabled {
 			enabled++
 		}
+		if err := validateMaskingConditions(s.ID, s.MaskingConditions); err != nil {
+			return err
+		}
 	}
 	if enabled == 0 {
 		return fmt.Errorf("config: at least one enabled system is required in api_key mode")
 	}
 	return nil
+}
+
+// validateMaskingConditions validates the conditional-masking config for a
+// system. Unknown PII kinds (target or required) are rejected with a clear
+// error. An empty condition (no requires_all and no requires_any) is allowed:
+// it means "always satisfied", which explicitly disables any default dependency
+// for that kind.
+func validateMaskingConditions(systemID string, conditions map[string]MaskConditionConfig) error {
+	for target, cond := range conditions {
+		if !validPIIKind(target) {
+			return fmt.Errorf("config: system %q: unknown masking_conditions target kind %q", systemID, target)
+		}
+		for _, k := range cond.RequiresAll {
+			if !validPIIKind(k) {
+				return fmt.Errorf("config: system %q: masking_conditions for %q: unknown requires_all kind %q", systemID, target, k)
+			}
+		}
+		for _, k := range cond.RequiresAny {
+			if !validPIIKind(k) {
+				return fmt.Errorf("config: system %q: masking_conditions for %q: unknown requires_any kind %q", systemID, target, k)
+			}
+		}
+	}
+	return nil
+}
+
+// validPIIKind reports whether s is a known PII kind string.
+func validPIIKind(s string) bool {
+	switch pii.PIIKind(s) {
+	case pii.PIIKindFullName, pii.PIIKindFirstName, pii.PIIKindLastName,
+		pii.PIIKindMiddleName, pii.PIIKindAddress, pii.PIIKindCity,
+		pii.PIIKindStreet, pii.PIIKindHouse, pii.PIIKindApartment,
+		pii.PIIKindBirthPlace, pii.PIIKindCitizenship, pii.PIIKindPassportIssuer,
+		pii.PIIKindCardHolderName, pii.PIIKindEmail, pii.PIIKindPhone,
+		pii.PIIKindINN, pii.PIIKindBankCard, pii.PIIKindPassport,
+		pii.PIIKindPassportDivision, pii.PIIKindDate, pii.PIIKindDriverLicense,
+		pii.PIIKindCVV, pii.PIIKindPIN, pii.PIIKindPostalCode:
+		return true
+	default:
+		return false
+	}
 }
 
 func loadSystems(path string) ([]System, error) {

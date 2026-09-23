@@ -163,22 +163,78 @@ func buildProcessor(cfg config.Config) (contract.Processor, func(), error) {
 
 // buildPolicies builds a policy for the verify consumer and every enabled
 // system, allowing all PII kinds with detokenization enabled.
+//
+// The default policy (verify consumer) applies the required business rule:
+// PIN is masked only when CARD_NUMBER is also present.
+//
+// Each enabled system MERGES its masking_conditions on top of the defaults:
+//   - a system without masking_conditions keeps the default rules;
+//   - a system that adds a rule for a new kind keeps the default rules for
+//     other kinds;
+//   - a system that sets an empty condition for a kind (e.g. "pin": {})
+//     explicitly disables the default dependency for that kind (always
+//     satisfied);
+//   - a system that sets a non-empty condition for a kind overrides the
+//     default for that kind.
 func buildPolicies(cfg config.Config) map[string]pii.Policy {
 	allowed := allKinds()
+	defaultConditions := defaultMaskConditions()
 	pol := pii.Policy{
 		AllowedKinds:          allowed,
 		DetokenizationAllowed: true,
 		MinConfidence:         0.5,
+		MaskConditions:        defaultConditions,
 	}
 	policies := map[string]pii.Policy{
 		auth.VerifyConsumerID: pol,
 	}
 	for _, s := range cfg.Systems {
-		if s.Enabled {
-			policies[s.ID] = pol
+		if !s.Enabled {
+			continue
 		}
+		sp := pol
+		if len(s.MaskingConditions) > 0 {
+			sp.MaskConditions = mergeMaskConditions(defaultConditions, s.MaskingConditions)
+		}
+		policies[s.ID] = sp
 	}
 	return policies
+}
+
+// defaultMaskConditions returns the default conditional-masking rules. The only
+// required business rule is: PIN requires CARD_NUMBER.
+func defaultMaskConditions() map[pii.PIIKind]pii.MaskCondition {
+	return map[pii.PIIKind]pii.MaskCondition{
+		pii.PIIKindPIN: {RequiresAll: []pii.PIIKind{pii.PIIKindBankCard}},
+	}
+}
+
+// mergeMaskConditions merges per-system overrides on top of the defaults.
+// Defaults are deep-copied so the shared default map is never mutated. A
+// system override for a kind replaces the default for that kind; an empty
+// override (always satisfied) explicitly disables the default dependency.
+func mergeMaskConditions(defaults map[pii.PIIKind]pii.MaskCondition, overrides map[string]config.MaskConditionConfig) map[pii.PIIKind]pii.MaskCondition {
+	out := make(map[pii.PIIKind]pii.MaskCondition, len(defaults)+len(overrides))
+	for kind, cond := range defaults {
+		out[kind] = cond
+	}
+	for target, cond := range overrides {
+		out[pii.PIIKind(target)] = buildMaskCondition(cond)
+	}
+	return out
+}
+
+// buildMaskCondition converts the JSON config form into pii.MaskCondition.
+// The config is already validated by config.Validate, so kinds are known.
+func buildMaskCondition(cond config.MaskConditionConfig) pii.MaskCondition {
+	mc := pii.MaskCondition{}
+	for _, k := range cond.RequiresAll {
+		mc.RequiresAll = append(mc.RequiresAll, pii.PIIKind(k))
+	}
+	for _, k := range cond.RequiresAny {
+		mc.RequiresAny = append(mc.RequiresAny, pii.PIIKind(k))
+	}
+	return mc
 }
 
 func allKinds() map[pii.PIIKind]bool {
