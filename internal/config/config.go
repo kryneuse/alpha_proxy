@@ -335,6 +335,7 @@ func validateSystems(systems []System) error {
 }
 
 func loadSystems(path string) ([]System, error) {
+	//nolint:gosec // G304: the path is supplied by the trusted service operator configuration.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("config: read systems file: %w", err)

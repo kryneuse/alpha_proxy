@@ -82,6 +82,7 @@ func TestTakeBatchFirstItemTooLarge(t *testing.T) {
 	if !errors.Is(err, pii.ErrPayloadTooLarge) {
 		t.Fatalf("expected ErrPayloadTooLarge, got %v", err)
 	}
+	//nolint:errorlint // Direct comparison intentionally verifies that the sentinel was wrapped.
 	if err == pii.ErrPayloadTooLarge {
 		t.Fatal("expected a wrapped error, not the sentinel directly")
 	}

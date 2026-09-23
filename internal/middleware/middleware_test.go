@@ -70,7 +70,9 @@ func TestRequestIDGeneratedFormat(t *testing.T) {
 			t.Errorf("generated ID length = %d, want 32", len(id))
 		}
 		for _, c := range id {
-			if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			isDigit := c >= '0' && c <= '9'
+			isLowerHex := c >= 'a' && c <= 'f'
+			if !isDigit && !isLowerHex {
 				t.Errorf("generated ID contains non-hex char %q", c)
 			}
 		}
