@@ -5,11 +5,15 @@ token-level sliding window (max_length=384, stride=64) to handle chunks that
 exceed the token limit.
 
 RedMadRobot NER uses a token-level sliding window (max_length=512, stride=128).
+
+Each Window carries the ready model inputs (input_ids, attention_mask,
+token_type_ids) together with the char offset_mapping, so the caller does not
+re-tokenize the window before inference.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterator, List, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, Iterator, List, Tuple
 
 # Author's chunking boundaries for LLAIM.
 _LINE_BREAKS = "\n\r\u2028\u2029"
@@ -20,12 +24,14 @@ class Window:
     """A single tokenization window over a text span.
 
     char_start/char_end are character offsets into the original text.
+    inputs holds the ready model inputs (numpy arrays) for this window.
+    offset_mapping is the list of (start, end) char offsets relative to the
+    window text, one per token (special/padding tokens excluded).
     """
 
     char_start: int
     char_end: int
-    # offset_mapping from the tokenizer: list of (start, end) char offsets
-    # relative to the window text, one per token.
+    inputs: Dict[str, object]
     offset_mapping: List[Tuple[int, int]]
 
 
@@ -52,6 +58,19 @@ def llaim_chunks(text: str, max_chars: int = 900) -> Iterator[Tuple[int, str]]:
         start = end
 
 
+def _to_numpy(enc: Dict) -> Dict[str, object]:
+    """Convert a tokenizer encoding to numpy arrays for ORT feeds."""
+    out = {}
+    for key, val in enc.items():
+        if key == "offset_mapping":
+            continue
+        if hasattr(val, "numpy"):
+            out[key] = val.numpy()
+        else:
+            out[key] = val
+    return out
+
+
 def sliding_windows(
     tokenizer,
     text: str,
@@ -61,8 +80,8 @@ def sliding_windows(
     """Tokenize `text` with a sliding window and recover char offsets.
 
     Uses the tokenizer's offset_mapping to map tokens back to character
-    positions. Windows overlap by `stride` tokens. Padding/special tokens are
-    excluded from the returned offset_mapping.
+    positions. Windows overlap by `stride` tokens. Each Window carries the
+    ready model inputs so the caller does not re-tokenize.
     """
     enc = tokenizer(
         text,
@@ -71,26 +90,25 @@ def sliding_windows(
         max_length=max_length,
         stride=stride,
         return_overflowing_tokens=True,
-        return_tensors=None,
+        return_tensors="np",
     )
-    seq_ids = enc.sequence_ids(0) if hasattr(enc, "sequence_ids") else None
     for i, offset_mapping in enumerate(enc["offset_mapping"]):
-        # Filter out special tokens (sequence_id is None) and padding.
-        mapping = []
-        for tok_idx, (s, e) in enumerate(offset_mapping):
-            if s == e:
-                continue
-            if seq_ids is not None:
-                sid = seq_ids[tok_idx] if isinstance(seq_ids, list) else None
-                if sid is None:
-                    continue
-            mapping.append((s, e))
-        if not mapping:
+        # Keep the full offset_mapping (including special/padding tokens) so it
+        # stays aligned with the logits rows. char_start/char_end are derived
+        # from the first/last real token.
+        real = [(int(s), int(e)) for s, e in offset_mapping if int(s) != int(e)]
+        if not real:
             continue
+        # Build per-window model inputs (keep the batch dimension).
+        inputs = {}
+        for key in ("input_ids", "attention_mask", "token_type_ids"):
+            if key in enc:
+                inputs[key] = enc[key][i : i + 1]
         yield Window(
-            char_start=mapping[0][0],
-            char_end=mapping[-1][1],
-            offset_mapping=mapping,
+            char_start=real[0][0],
+            char_end=real[-1][1],
+            inputs=inputs,
+            offset_mapping=[(int(s), int(e)) for s, e in offset_mapping],
         )
 
 

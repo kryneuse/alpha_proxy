@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import List, Optional, Set
 
 from ..config import Config
+from .cancellation import CancelledError, check_cancelled
 from .gate import LlaimGate
 from .ner import RedMadRobotNer
 from .onnx_model import OnnxTokenClassifier
@@ -14,7 +15,7 @@ class PIIDetector:
     """High-level detector combining the LLAIM gate and RedMadRobot NER.
 
     Models are loaded once and shared across parallel calls. The tokenizers are
-    thread-safe via internal locks.
+    thread-safe via thread-local instances.
     """
 
     def __init__(self, config: Config) -> None:
@@ -55,11 +56,14 @@ class PIIDetector:
         """Apply the enabled_types filter to final entities."""
         return [e for e in entities if e.type in self._enabled_types]
 
-    def detect_chunk(self, chunk_id: str, text: str) -> ChunkResult:
+    def detect_chunk(
+        self, chunk_id: str, text: str, context=None
+    ) -> ChunkResult:
         """Process a single chunk through gate -> NER -> filter."""
         audit = ChunkAudit(chunk_id=chunk_id)
 
-        gate = self._gate.run(text)
+        check_cancelled(context)
+        gate = self._gate.run(text, context=context)
         audit.gate_open = gate.open
         audit.gate_score = gate.score
         audit.gate_ms = gate.ms
@@ -70,7 +74,8 @@ class PIIDetector:
             audit.ner_ms = 0.0
             return ChunkResult(chunk_id=chunk_id, entities=[], error_code="NONE", audit=audit)
 
-        ner = self._ner.run(text)
+        check_cancelled(context)
+        ner = self._ner.run(text, context=context)
         audit.ner_ms = ner.ms
 
         entities = self._filter_entities(ner.entities)
@@ -81,16 +86,21 @@ class PIIDetector:
         batch_id: str,
         offset_unit: str,
         chunks: List[tuple],
+        context=None,
     ) -> BatchResult:
         """Process a batch of (chunk_id, text) pairs sequentially.
 
         Each chunk is independent; a failure in one chunk is reported via its
-        error_code and does not affect the others.
+        error_code and does not affect the others. Cancellation is checked
+        before each chunk and propagated between windows.
         """
         results: List[ChunkResult] = []
         for chunk_id, text in chunks:
+            check_cancelled(context)
             try:
-                results.append(self.detect_chunk(chunk_id, text))
+                results.append(self.detect_chunk(chunk_id, text, context=context))
+            except CancelledError:
+                raise
             except Exception as exc:  # noqa: BLE001
                 results.append(
                     ChunkResult(
