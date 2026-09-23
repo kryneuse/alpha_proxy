@@ -12,5 +12,5 @@ type Entity struct {
 }
 
 type BackendDetector interface {
-	Detect(ctx context.Context, text string, policy Policy) ([]Entity, error)
+	Detect(ctx context.Context, text string) ([]Entity, error)
 }

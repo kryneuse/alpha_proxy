@@ -13,6 +13,7 @@ import (
 
 	"github.com/kryneuse/alpha_proxy/internal/entity"
 	"github.com/kryneuse/alpha_proxy/internal/gate"
+	"github.com/kryneuse/alpha_proxy/internal/residual"
 )
 
 // CheapClassifier is a cheap ML classifier that decides whether a residual
@@ -73,14 +74,14 @@ func (c *Cascade) Run(ctx context.Context, chunk string) (Result, error) {
 	ruleEntities := c.engine.Analyze(chunk)
 
 	// 2. Build the residual text (rule spans masked with spaces).
-	residual := maskSpans(chunk, ruleEntities)
+	residualText := residual.Build(chunk, ruleEntities)
 
 	// 3. Run the heuristic gate.
-	decision := c.gate.Evaluate(residual)
+	decision := c.gate.Evaluate(residualText)
 
 	res := Result{
 		Entities:  ruleEntities,
-		Residual:  residual,
+		Residual:  residualText,
 		Route:     decision.Route,
 		GateScore: decision.Score,
 	}
@@ -97,7 +98,7 @@ func (c *Cascade) Run(ctx context.Context, chunk string) (Result, error) {
 			return res, errFailClosed("cheap classifier unavailable for UNCERTAIN route")
 		}
 		res.CheapInvoked = true
-		score, err := c.cheap.HasPII(ctx, residual)
+		score, err := c.cheap.HasPII(ctx, residualText)
 		if err != nil {
 			// Fail closed: route to the expensive extractor.
 			return c.runExpensive(ctx, res)
@@ -134,29 +135,6 @@ func (c *Cascade) runExpensive(ctx context.Context, res Result) (Result, error) 
 	// resolve overlaps. For now, append ML entities.
 	res.Entities = append(res.Entities, mlEntities...)
 	return res, nil
-}
-
-// maskSpans replaces the given entity spans with spaces, preserving byte
-// length.
-func maskSpans(original string, spans []entity.Entity) string {
-	b := []byte(original)
-	for _, s := range spans {
-		start := s.Start
-		end := s.End
-		if start < 0 {
-			start = 0
-		}
-		if end > len(b) {
-			end = len(b)
-		}
-		if start >= end {
-			continue
-		}
-		for i := start; i < end; i++ {
-			b[i] = ' '
-		}
-	}
-	return string(b)
 }
 
 // errFailClosed is a sentinel error for fail-closed situations.

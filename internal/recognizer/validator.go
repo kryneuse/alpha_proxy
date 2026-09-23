@@ -7,7 +7,7 @@ import "strconv"
 
 // Inn10 validates a 10-digit Russian INN using its control digit.
 func Inn10(s string) bool {
-	if len(s) != 10 {
+	if len(s) != 10 || allSameDigits(s) {
 		return false
 	}
 	weights := []int{2, 4, 10, 3, 5, 9, 4, 6, 8}
@@ -29,7 +29,7 @@ func Inn10(s string) bool {
 
 // Inn12 validates a 12-digit Russian INN using its two control digits.
 func Inn12(s string) bool {
-	if len(s) != 12 {
+	if len(s) != 12 || allSameDigits(s) {
 		return false
 	}
 	weights1 := []int{7, 2, 4, 10, 3, 5, 9, 4, 6, 8}
@@ -62,7 +62,7 @@ func Inn12(s string) bool {
 
 // Luhn validates a card number using the Luhn algorithm.
 func Luhn(s string) bool {
-	if len(s) < 2 {
+	if len(s) < 2 || allSameDigits(s) {
 		return false
 	}
 	sum := 0
@@ -82,4 +82,18 @@ func Luhn(s string) bool {
 		double = !double
 	}
 	return sum%10 == 0
+}
+
+// allSameDigits reports whether s consists of a single repeated digit.
+func allSameDigits(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	first := s[0]
+	for i := 1; i < len(s); i++ {
+		if s[i] != first {
+			return false
+		}
+	}
+	return true
 }

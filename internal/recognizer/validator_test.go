@@ -14,6 +14,12 @@ func TestInn10(t *testing.T) {
 	if Inn10("123") {
 		t.Error("expected invalid short INN")
 	}
+	// All same digits.
+	for _, n := range []string{"0000000000", "1111111111"} {
+		if Inn10(n) {
+			t.Errorf("expected invalid INN %s", n)
+		}
+	}
 }
 
 func TestInn12(t *testing.T) {
@@ -23,6 +29,12 @@ func TestInn12(t *testing.T) {
 	}
 	if Inn12("500100732258") {
 		t.Error("expected invalid INN 500100732258")
+	}
+	// All same digits.
+	for _, n := range []string{"000000000000", "111111111111"} {
+		if Inn12(n) {
+			t.Errorf("expected invalid INN %s", n)
+		}
 	}
 }
 
@@ -39,5 +51,9 @@ func TestLuhn(t *testing.T) {
 	}
 	if Luhn("1234567890123456") {
 		t.Error("expected invalid Luhn for sequential digits")
+	}
+	// All same digits.
+	if Luhn("0000000000000000") {
+		t.Error("expected invalid Luhn for all same digits")
 	}
 }

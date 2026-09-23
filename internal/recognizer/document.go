@@ -2,7 +2,6 @@ package recognizer
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/kryneuse/alpha_proxy/internal/entity"
 	"github.com/kryneuse/alpha_proxy/internal/normalize"
@@ -161,17 +160,4 @@ func (r *PassportIssuerRecognizer) Recognize(norm *normalize.Text) []entity.Cand
 		})
 	}
 	return spans
-}
-
-// normalizeIssuerText trims leading keywords from issuer text.
-func normalizeIssuerText(s string) string {
-	s = strings.TrimSpace(s)
-	lower := strings.ToLower(s)
-	for _, kw := range []string{"выдан:", "выдано:", "кем выдан:", "орган, выдавший:", "выдан ", "выдано "} {
-		if strings.HasPrefix(lower, kw) {
-			s = strings.TrimSpace(s[len(kw):])
-			break
-		}
-	}
-	return s
 }
