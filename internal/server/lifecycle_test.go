@@ -275,7 +275,9 @@ func TestServeGracefulDrain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("net.Listen error: %v", err)
 	}
-	defer ln.Close()
+	defer func() {
+		_ = ln.Close()
+	}()
 
 	started := make(chan struct{})
 	release := make(chan struct{})
@@ -291,15 +293,19 @@ func TestServeGracefulDrain(t *testing.T) {
 	result := runServe(t, ctx, srv, ln, readiness, 5*time.Second)
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	respCh := make(chan *http.Response, 1)
-	errCh := make(chan error, 1)
+	clientResultCh := make(chan clientResult, 1)
 	go func() {
 		resp, err := client.Get("http://" + ln.Addr().String() + "/")
 		if err != nil {
-			errCh <- err
+			clientResultCh <- clientResult{err: err}
 			return
 		}
-		respCh <- resp
+		_, readErr := io.Copy(io.Discard, resp.Body)
+		closeErr := resp.Body.Close()
+		clientResultCh <- clientResult{
+			statusCode: resp.StatusCode,
+			err:        errors.Join(readErr, closeErr),
+		}
 	}()
 
 	<-started
@@ -316,15 +322,12 @@ func TestServeGracefulDrain(t *testing.T) {
 
 	close(release)
 
-	select {
-	case resp := <-respCh:
-		defer resp.Body.Close()
-		_, _ = io.Copy(io.Discard, resp.Body)
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("status = %d, want 200", resp.StatusCode)
-		}
-	case err := <-errCh:
-		t.Fatalf("client error: %v", err)
+	res := <-clientResultCh
+	if res.err != nil {
+		t.Fatalf("client error: %v", res.err)
+	}
+	if res.statusCode != http.StatusOK {
+		t.Errorf("status = %d, want 200", res.statusCode)
 	}
 
 	select {
@@ -354,7 +357,9 @@ func dummyListener(t *testing.T) net.Listener {
 	if err != nil {
 		t.Fatalf("net.Listen error: %v", err)
 	}
-	ln.Close()
+	if err := ln.Close(); err != nil {
+		t.Fatalf("close listener: %v", err)
+	}
 	return ln
 }
 
@@ -364,6 +369,12 @@ type shutdownObservation struct {
 	ctxNil      bool
 	ctxErr      error
 	hasDeadline bool
+}
+
+// clientResult carries the outcome of a client request performed in a goroutine.
+type clientResult struct {
+	statusCode int
+	err        error
 }
 
 // fakeReadiness records the last state and signals SetReady(false) once.

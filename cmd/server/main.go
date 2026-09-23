@@ -80,7 +80,8 @@ func run(ctx context.Context) error {
 		IdleTimeout:       cfg.IdleTimeout,
 	}
 
-	listener, err := net.Listen("tcp", cfg.Addr)
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", cfg.Addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}

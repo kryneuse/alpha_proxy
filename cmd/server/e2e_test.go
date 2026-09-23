@@ -142,7 +142,11 @@ func postProcess(t *testing.T, url, payload, payloadID string) (int, string) {
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("close response body: %v", err)
+		}
+	}()
 
 	var out e2eResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {

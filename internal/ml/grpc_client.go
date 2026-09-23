@@ -141,7 +141,7 @@ func fromGRPCResponse(req BatchRequest, resp *mlv1.DetectBatchResponse) (BatchRe
 			if e.Confidence < 0 || e.Confidence > 1 {
 				return BatchResponse{}, fmt.Errorf("entity confidence out of range: %w", pii.ErrInvalidMLResponse)
 			}
-			if e.Start < 0 || e.End <= e.Start || e.End > int32(textLen) {
+			if e.Start < 0 || e.End <= e.Start || int64(e.End) > int64(textLen) {
 				return BatchResponse{}, fmt.Errorf("entity span out of range: %w", pii.ErrInvalidMLResponse)
 			}
 			cr.Entities = append(cr.Entities, MLEntity{

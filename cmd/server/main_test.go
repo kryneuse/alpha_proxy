@@ -11,6 +11,7 @@ import (
 )
 
 func TestRunRejectsNilContext(t *testing.T) {
+	//nolint:staticcheck // SA1012: this test intentionally verifies rejection of a nil context.
 	if err := run(nil); err == nil {
 		t.Fatal("run(nil) error = nil, want error")
 	}
