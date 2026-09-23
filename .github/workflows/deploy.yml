@@ -1,0 +1,122 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Delivered commit SHA
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate SHA
+        env:
+          INPUT_SHA: ${{ github.event.inputs.sha }}
+        run: |
+          if ! [[ "$INPUT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "error: SHA must be exactly 40 lowercase hex characters" >&2
+            exit 1
+          fi
+          if ! git cat-file -e "$INPUT_SHA^{commit}"; then
+            echo "error: commit $INPUT_SHA does not exist" >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$INPUT_SHA" origin/main; then
+            echo "error: commit $INPUT_SHA is not an ancestor of origin/main" >&2
+            exit 1
+          fi
+          echo "sha=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release SHA
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.sha }}
+          path: release
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify delivered images
+        env:
+          SHA: ${{ github.event.inputs.sha }}
+        run: |
+          docker buildx imagetools inspect "ghcr.io/kryneuse/alpha-proxy-api:$SHA" >/dev/null
+          docker buildx imagetools inspect "ghcr.io/kryneuse/alpha-proxy-ml:$SHA" >/dev/null
+
+      - name: Write SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: Copy deploy files
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          scp -P "$DEPLOY_PORT" \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            release/compose.yaml \
+            "$DEPLOY_USER@$DEPLOY_HOST:/opt/alpha-proxy/compose.yaml.new"
+          scp -P "$DEPLOY_PORT" \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            deploy/remote-deploy.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:/opt/alpha-proxy/remote-deploy.sh"
+
+      - name: Run remote deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          SHA: ${{ github.event.inputs.sha }}
+        run: |
+          ssh -p "$DEPLOY_PORT" \
+            -i "$HOME/.ssh/id_ed25519" \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o IdentitiesOnly=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            "chmod +x /opt/alpha-proxy/remote-deploy.sh && /opt/alpha-proxy/remote-deploy.sh '$SHA' 'ghcr.io/kryneuse/alpha-proxy-api' 'ghcr.io/kryneuse/alpha-proxy-ml'"
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519" "$HOME/.ssh/known_hosts"
