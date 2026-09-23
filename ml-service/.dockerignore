@@ -1,0 +1,48 @@
+# Tests and scripts (not needed at runtime)
+tests/
+scripts/
+
+# Models and weights (mounted at /models via volume, never baked into the image)
+models/
+
+# Model files (defensive, in case models/ is ever re-included)
+*.onnx
+*.onnx.data
+*.safetensors
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Virtualenv
+.venv/
+venv/
+
+# Pytest cache and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Git files
+.git
+.gitignore
+
+# Logs
+*.log
+logs/
+
+# Keep the service package and dependency manifest
+!requirements.txt
+!ml_service/

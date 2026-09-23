@@ -6,3 +6,8 @@ __pycache__/
 
 # Load test results
 loadtest/results/
+
+# Local deployment configuration
+.env
+.env.*
+!.env.example

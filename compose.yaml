@@ -1,0 +1,93 @@
+name: ${COMPOSE_PROJECT_NAME:-alpha-proxy}
+
+services:
+  ml:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    image: ${ML_IMAGE:-alpha-proxy-ml:dev}
+    restart: unless-stopped
+    init: true
+    expose:
+      - "50051"
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 4g
+    stop_grace_period: 30s
+    volumes:
+      - ${MODELS_DIR:-./ml-service/models}:/models:ro
+    environment:
+      ML_MODELS_DIR: /models
+      ML_GRPC_PORT: "50051"
+      ML_GATE_THRESHOLD: ${ML_GATE_THRESHOLD:-0.001}
+      ML_NUM_WORKERS: ${ML_NUM_WORKERS:-4}
+      ML_INTRA_OP_THREADS: ${ML_INTRA_OP_THREADS:-1}
+      ML_INTER_OP_THREADS: ${ML_INTER_OP_THREADS:-1}
+      ML_MODEL_VERSION: ${ML_MODEL_VERSION:-1.0.0}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${API_IMAGE:-alpha-proxy-api:dev}
+    restart: unless-stopped
+    init: true
+    networks:
+      - backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    stop_grace_period: 25s
+    ports:
+      - "${HTTP_BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-8080}:8080"
+    depends_on:
+      ml:
+        condition: service_healthy
+    environment:
+      ALPHA_PROXY_ADDR: ":8080"
+      ALPHA_PROXY_RUN_MODE: verify
+      ALPHA_PROXY_AUTH_MODE: verify
+      ALPHA_PROXY_PROCESSOR_MODE: real
+      ALPHA_PROXY_ML_ADDR: "ml:50051"
+      ALPHA_PROXY_READ_TIMEOUT: 10s
+      ALPHA_PROXY_READ_HEADER_TIMEOUT: 5s
+      ALPHA_PROXY_WRITE_TIMEOUT: 10s
+      ALPHA_PROXY_IDLE_TIMEOUT: 60s
+      ALPHA_PROXY_PROCESSING_TIMEOUT: 5s
+      ALPHA_PROXY_SHUTDOWN_TIMEOUT: 15s
+      ALPHA_PROXY_BODY_LIMIT: "1048576"
+      ALPHA_PROXY_PARALLEL_LIMIT: ${API_PARALLEL_LIMIT:-128}
+      ALPHA_PROXY_OVERLOAD_RETRY_AFTER: 1s
+      ALPHA_PROXY_GLOBAL_RATE_LIMIT_RPS: ${API_GLOBAL_RATE_LIMIT_RPS:-2000}
+      ALPHA_PROXY_GLOBAL_RATE_LIMIT_BURST: ${API_GLOBAL_RATE_LIMIT_BURST:-2000}
+      ALPHA_PROXY_CONSUMER_RATE_LIMIT_RPS: "0"
+      ALPHA_PROXY_CONSUMER_RATE_LIMIT_BURST: "0"
+      ALPHA_PROXY_METRICS_ENABLED: "true"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  backend:
+    driver: bridge
